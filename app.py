@@ -715,14 +715,34 @@ async def api_where(name: str, time: str = None):
 
     candidates = (before.data or []) + (after.data or [])
     if not candidates:
-        return JSONResponse({"error": "No location data for that time."}, status_code=404)
+        # No history at all — fall back to live location
+        loc = live_locations.get(device_id)
+        if loc:
+            return {
+                "device": device["device_name"],
+                "latitude": loc["latitude"],
+                "longitude": loc["longitude"],
+                "accuracy": loc.get("horizontalAccuracy"),
+                "polled_at": loc.get("polled_at"),
+                "source": "live",
+                "note": f"No history data for the requested time. Showing current live location instead.",
+            }
+        return JSONResponse({"error": "No location data available at all."}, status_code=404)
 
     # Pick closest
     best = min(candidates, key=lambda r: abs(
         datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")).timestamp() - target.timestamp()
     ))
 
-    return {
+    # Check how far off the closest point is from requested time
+    diff_seconds = abs(
+        datetime.fromisoformat(best["created_at"].replace("Z", "+00:00")).timestamp() - target.timestamp()
+    )
+    note = None
+    if diff_seconds > 300:  # More than 5 minutes off
+        note = f"No exact data for the requested time. Closest record is {int(diff_seconds // 60)} minutes away."
+
+    result = {
         "device": device["device_name"],
         "latitude": best["latitude"],
         "longitude": best["longitude"],
@@ -730,6 +750,9 @@ async def api_where(name: str, time: str = None):
         "recorded_at": best["created_at"],
         "source": "history",
     }
+    if note:
+        result["note"] = note
+    return result
 
 
 @app.get("/api/distance/{name1}/{name2}")

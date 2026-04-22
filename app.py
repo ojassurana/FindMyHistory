@@ -179,6 +179,9 @@ async def poll_location():
                         tracked_devices.pop(did, None)
                         last_saved_locations.pop(did, None)
 
+                # Refresh all device data from iCloud
+                icloud_api.devices.refresh()
+
                 # Poll each tracked device
                 for device_id, device in list(tracked_devices.items()):
                     try:

@@ -197,6 +197,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[startup] Could not restore session: {e}")
 
+    # Load last saved location from DB to avoid duplicate saves on restart
+    global last_saved_location
+    try:
+        db_device = get_tracked_device_from_db()
+        if db_device:
+            last_loc = (
+                supabase.table("location_history")
+                .select("latitude,longitude")
+                .eq("device_id", db_device["device_id"])
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if last_loc.data:
+                last_saved_location = last_loc.data[0]
+    except Exception as e:
+        print(f"[startup] Could not load last saved location: {e}")
+
     polling_task = asyncio.create_task(poll_location())
     yield
     polling_task.cancel()

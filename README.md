@@ -8,9 +8,15 @@
 - **Maps:** Leaflet + OpenStreetMap — free, no API keys required
 - **Database:** Supabase
 
+### Local Development
+- Developing on **localhost**
+- Using **ngrok** to expose the local server for Telegram webhook callbacks during development
+
 ## Production
 
-*(Coming soon)*
+### Deployment
+- Hosted on **Heroku**
+- Code is pushed to **GitHub**, which is linked to Heroku for automatic deployments via the **Heroku CLI**
 
 ## Skills I've Used
 

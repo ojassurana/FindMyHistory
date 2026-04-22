@@ -143,78 +143,58 @@ def find_icloud_device_by_id(device_id):
     return None
 
 
-async def poll_location():
-    """Background task: poll iCloud for all tracked devices every POLL_INTERVAL seconds."""
+def _poll_sync():
+    """Synchronous poll — runs all blocking iCloud calls in one shot."""
     global icloud_api, tracked_devices
 
-    print(f"[poll] Background poll task started")
+    if not icloud_api:
+        return
+
+    if icloud_api.requires_2fa or icloud_api.requires_2sa:
+        icloud_api = None
+        tracked_devices = {}
+        return
+
+    db_devices = get_all_tracked_devices_from_db()
+    db_ids = {d["device_id"] for d in db_devices}
+
+    # Iterate devices (triggers iCloud refresh internally)
+    for device in icloud_api.devices:
+        device_id = device.data.get("id", "")
+        if device_id not in db_ids:
+            continue
+
+        location = device.location
+        if not location or not location.get("latitude"):
+            continue
+
+        should_save = True
+        last = last_saved_locations.get(device_id)
+        if last:
+            dist = haversine(
+                last["latitude"], last["longitude"],
+                location["latitude"], location["longitude"],
+            )
+            if dist < MIN_DISTANCE_M:
+                should_save = False
+
+        if should_save:
+            save_location(device_id, location)
+            last_saved_locations[device_id] = {
+                "latitude": location["latitude"],
+                "longitude": location["longitude"],
+            }
+            print(f"[poll] Saved: {location['latitude']:.4f},{location['longitude']:.4f}")
+
+
+async def poll_location():
+    """Background task: runs the blocking poll in a thread every POLL_INTERVAL seconds."""
+    print("[poll] Background poll task started")
     while True:
         try:
-            if not icloud_api:
-                print(f"[poll] No iCloud API, skipping")
-            if icloud_api:
-                # Check if session is still valid
-                if icloud_api.requires_2fa or icloud_api.requires_2sa:
-                    icloud_api = None
-                    tracked_devices = {}
-                    continue
-
-                # Sync tracked_devices from DB in case new ones were added
-                db_devices = get_all_tracked_devices_from_db()
-                print(f"[poll] DB has {len(db_devices)} devices, memory has {len(tracked_devices)}")
-                for db_dev in db_devices:
-                    did = db_dev["device_id"]
-                    if did not in tracked_devices:
-                        icloud_dev = find_icloud_device_by_id(did)
-                        if icloud_dev:
-                            tracked_devices[did] = icloud_dev
-                            print(f"[poll] Started tracking: {db_dev['device_name']}")
-                        else:
-                            print(f"[poll] Could not find iCloud device for: {db_dev['device_name']}")
-
-                # Remove devices no longer in DB
-                db_ids = {d["device_id"] for d in db_devices}
-                for did in list(tracked_devices.keys()):
-                    if did not in db_ids:
-                        tracked_devices.pop(did, None)
-                        last_saved_locations.pop(did, None)
-
-                # Iterate all iCloud devices and match against tracked ones
-                # Must run in thread because __iter__ calls blocking iCloud API
-                db_ids = {d["device_id"] for d in db_devices}
-                devices_list = await asyncio.to_thread(list, icloud_api.devices)
-                for device in devices_list:
-                    device_id = device.data.get("id", "")
-                    if device_id not in db_ids:
-                        continue
-                    try:
-                        location = device.location
-                        if location and location.get("latitude"):
-                            should_save = True
-                            last = last_saved_locations.get(device_id)
-                            if last:
-                                dist = haversine(
-                                    last["latitude"], last["longitude"],
-                                    location["latitude"], location["longitude"],
-                                )
-                                if dist < MIN_DISTANCE_M:
-                                    should_save = False
-
-                            if should_save:
-                                save_location(device_id, location)
-                                last_saved_locations[device_id] = {
-                                    "latitude": location["latitude"],
-                                    "longitude": location["longitude"],
-                                }
-                                print(f"[poll] Saved: {location['latitude']:.4f},{location['longitude']:.4f}")
-                            # else: not moved enough, skip silently
-                        else:
-                            print(f"[poll] No location for {device_id[:20]}")
-                    except Exception as e:
-                        print(f"[poll] Error polling {device_id[:20]}...: {e}")
+            await asyncio.to_thread(_poll_sync)
         except Exception as e:
             print(f"[poll] Error: {e}")
-
         await asyncio.sleep(POLL_INTERVAL)
 
 

@@ -354,12 +354,12 @@ async function pollLocations() {
             }
         });
 
-        // Update info panel with first device if none selected
+        // Auto-update info panel with currently shown device, or first device
         if (data.locations.length) {
             const panel = document.getElementById("info-panel");
-            if (!panel.classList.contains("active")) {
-                updateInfoPanel(data.locations[0]);
-            }
+            const currentDevice = document.getElementById("info-device-name").textContent;
+            const match = data.locations.find(l => l.device_name === currentDevice);
+            updateInfoPanel(match || data.locations[0]);
         }
 
         // Fit bounds on first load
@@ -381,7 +381,7 @@ function updateInfoPanel(loc) {
     panel.classList.add("active");
 
     document.getElementById("info-device-name").textContent = loc.device_name;
-    const ts = loc.timestamp ? new Date(loc.timestamp).toLocaleTimeString() : "—";
+    const ts = loc.polled_at ? new Date(loc.polled_at).toLocaleTimeString() : "—";
     document.getElementById("info-updated").textContent = ts;
     document.getElementById("info-accuracy").textContent = loc.accuracy ? `${loc.accuracy.toFixed(1)}m` : "—";
     document.getElementById("info-coords").textContent = `${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`;

@@ -236,6 +236,7 @@ def background_poll_worker():
                     "timeStamp": location.get("timeStamp"),
                     "isOld": location.get("isOld"),
                     "altitude": location.get("altitude"),
+                    "polled_at": int(time.time() * 1000),
                 }
 
                 dev_name = next((d["device_name"] for d in db_devices if d["device_id"] == device_id), device_id[:15])
@@ -550,6 +551,7 @@ async def api_locations():
             "accuracy": loc.get("horizontalAccuracy"),
             "position_type": loc.get("positionType"),
             "timestamp": loc.get("timeStamp"),
+            "polled_at": loc.get("polled_at"),
             "is_old": loc.get("isOld"),
             "battery": None,
         })

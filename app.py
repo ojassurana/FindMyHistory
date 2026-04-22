@@ -313,6 +313,11 @@ async def api_verify_2fa(request: Request):
 
     result = icloud_api.validate_2fa_code(code)
     if result:
+        # Trust the session so Apple doesn't keep asking for 2FA
+        # This is critical to avoid account lockouts
+        if not icloud_api.is_trusted_session:
+            icloud_api.trust_session()
+
         session = (
             supabase.table("icloud_session")
             .select("apple_id")

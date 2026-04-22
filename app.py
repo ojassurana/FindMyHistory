@@ -141,7 +141,7 @@ def background_poll_worker():
 
     while True:
         try:
-            if not icloud_api:
+            if not icloud_api or not tracked_devices:
                 time.sleep(POLL_INTERVAL)
                 continue
 
@@ -150,20 +150,11 @@ def background_poll_worker():
                 time.sleep(POLL_INTERVAL)
                 continue
 
-            # Get tracked devices from DB
-            db_devices = worker_sb.table("tracked_device").select("*").order("created_at", desc=False).execute().data
-            if not db_devices:
-                time.sleep(POLL_INTERVAL)
-                continue
+            # Refresh device data from iCloud
+            icloud_api.devices.refresh()
 
-            db_ids = {d["device_id"] for d in db_devices}
-
-            # Iterate iCloud devices — this triggers the iCloud refresh (blocking, that's fine here)
-            for device in icloud_api.devices:
-                device_id = device.data.get("id", "")
-                if device_id not in db_ids:
-                    continue
-
+            # Read from tracked_devices (shared with web process)
+            for device_id, device in list(tracked_devices.items()):
                 location = device.location
                 if not location or not location.get("latitude"):
                     continue

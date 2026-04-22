@@ -210,6 +210,7 @@ def background_poll_worker():
                 continue
 
             # Sync tracked devices from DB
+            print(f"[worker] tick", flush=True)
             db_devices = worker_sb.table("tracked_device").select("*").execute().data
             db_ids = {d["device_id"] for d in db_devices}
             for db_dev in db_devices:

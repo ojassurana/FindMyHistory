@@ -47,30 +47,38 @@
         </div>
     </div>
 
-    <!-- Device Selection Screen -->
-    <div id="device-screen" class="login-screen" style="display:none;">
-        <div class="login-card" style="width: 440px;">
-            <h1>Select Device</h1>
-            <p>Choose which device to track.</p>
-            <ul id="device-list" class="device-list"></ul>
-        </div>
-    </div>
+    <!-- Device Selection Screen (legacy, hidden) -->
+    <div id="device-screen" class="login-screen" style="display:none;"></div>
 
     <!-- Main App -->
     <div id="app-layout" class="app-layout">
         <!-- Mobile sidebar toggle -->
-        <button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+        <button class="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
 
         <!-- Sidebar -->
         <div id="sidebar" class="sidebar">
             <div class="sidebar-header">
-                <h2 id="tracking-device-name">—</h2>
-                <div class="subtitle" id="tracking-device-model">—</div>
-                <button class="switch-device-btn" onclick="switchDevice()">Switch Device</button>
+                <h2>Tracked Devices</h2>
+                <button class="add-device-btn" onclick="openAddDevice()">+ Add Device</button>
             </div>
 
-            <div id="date-list" class="date-list">
-                <div class="date-list-empty">Loading history...</div>
+            <div id="tracked-devices-list" class="tracked-devices-list">
+                <div class="no-devices">No devices tracked yet.</div>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="history-section">
+                <div class="history-header">
+                    <h3>History</h3>
+                    <select id="history-device-select" class="history-device-select" onchange="onHistoryDeviceChange(this)">
+                        <option value="">Select device</option>
+                    </select>
+                </div>
+
+                <div id="date-list" class="date-list">
+                    <div class="date-list-empty">Select a device to view history.</div>
+                </div>
             </div>
 
             <!-- Playback Controls -->
@@ -80,7 +88,7 @@
                     <span id="playback-distance" class="playback-distance"></span>
                 </div>
                 <div class="playback-controls">
-                    <button id="play-btn" class="play-btn" onclick="togglePlayback()">▶</button>
+                    <button id="play-btn" class="play-btn" onclick="togglePlayback()">&#9654;</button>
                     <input type="range" id="scrubber" class="scrubber" min="0" max="100" value="0">
                     <select id="speed-select" class="speed-select">
                         <option value="0.5">0.5x</option>
@@ -89,7 +97,7 @@
                         <option value="4">4x</option>
                     </select>
                 </div>
-                <button class="switch-device-btn" style="margin-top: 12px; width: 100%; text-align: center;" onclick="backToLive()">Back to Live</button>
+                <button class="back-to-live-btn" onclick="backToLive()">Back to Live</button>
             </div>
         </div>
 
@@ -99,6 +107,10 @@
 
             <!-- Info Panel -->
             <div id="info-panel" class="info-panel">
+                <div class="info-item" style="min-width: 100px;">
+                    <div class="info-label">Device</div>
+                    <div class="info-value" id="info-device-name">—</div>
+                </div>
                 <div class="info-item">
                     <div class="info-label">Updated</div>
                     <div class="info-value" id="info-updated">—</div>
@@ -115,6 +127,18 @@
                     <div class="info-label">Battery</div>
                     <div class="info-value" id="info-battery">—</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Add Device Modal -->
+        <div id="device-modal" class="device-modal">
+            <div class="device-modal-card">
+                <div class="device-modal-header">
+                    <h2>Add Device</h2>
+                    <button class="device-modal-close" onclick="closeAddDevice()">&#10005;</button>
+                </div>
+                <p class="device-modal-desc">Only devices with an available location are shown.</p>
+                <ul id="device-picker-list" class="device-picker-list"></ul>
             </div>
         </div>
     </div>

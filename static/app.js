@@ -1,13 +1,14 @@
 // --- State ---
 let map = null;
-let marker = null;
-let accuracyCircle = null;
+let markers = {};       // {device_id: L.circleMarker}
+let accuracyCircles = {};
 let pollInterval = null;
 let playbackInterval = null;
 let playbackPoints = [];
 let playbackIndex = 0;
 let isPlaying = false;
 let trailLine = null;
+let selectedHistoryDevice = null;
 
 const POLL_MS = 5000;
 
@@ -27,10 +28,11 @@ async function checkStatus() {
         const res = await fetch("/api/status");
         const data = await res.json();
 
-        if (data.authenticated && data.has_device) {
-            showApp(data.device);
-        } else if (data.authenticated && !data.has_device) {
-            showDeviceSelection();
+        if (data.authenticated && data.has_devices) {
+            showApp();
+        } else if (data.authenticated && !data.has_devices) {
+            showApp();
+            openAddDevice();
         } else {
             showLogin();
         }
@@ -71,7 +73,8 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
         } else if (data.status === "2fa_required" || data.status === "2sa_required") {
             show2FA();
         } else if (data.status === "authenticated") {
-            showDeviceSelection();
+            showApp();
+            openAddDevice();
         }
     } catch {
         errorEl.textContent = "Connection failed.";
@@ -112,7 +115,8 @@ document.getElementById("tfa-form").addEventListener("submit", async (e) => {
             errorEl.textContent = data.error;
             errorEl.classList.add("visible");
         } else {
-            showDeviceSelection();
+            showApp();
+            openAddDevice();
         }
     } catch {
         errorEl.textContent = "Connection failed.";
@@ -123,64 +127,142 @@ document.getElementById("tfa-form").addEventListener("submit", async (e) => {
     }
 });
 
-// --- Device Selection ---
-async function showDeviceSelection() {
-    hideAll();
-    deviceScreen.style.display = "flex";
-    const list = document.getElementById("device-list");
-    list.innerHTML = '<li style="color: var(--text-muted);">Loading devices...</li>';
+// --- Device Picker (Add Device modal) ---
+async function openAddDevice() {
+    const modal = document.getElementById("device-modal");
+    modal.classList.add("active");
+    const list = document.getElementById("device-picker-list");
+    list.innerHTML = '<li class="device-picker-loading">Scanning for devices...</li>';
 
     try {
         const res = await fetch("/api/devices");
         const data = await res.json();
         list.innerHTML = "";
 
+        if (!data.devices.length) {
+            list.innerHTML = '<li class="device-picker-loading">No available devices with location.</li>';
+            return;
+        }
+
         data.devices.forEach((device) => {
             const li = document.createElement("li");
             li.innerHTML = `
-                <div>
+                <div class="device-picker-info">
                     <div class="device-name">${device.name}</div>
-                    <div class="device-model">${device.model}</div>
+                    <div class="device-model">${device.model}${device.battery ? " · " + Math.round(device.battery * 100) + "%" : ""}</div>
                 </div>
-                <div class="device-model">${device.battery ? Math.round(device.battery * 100) + "%" : ""}</div>
+                <div class="device-picker-coords">
+                    <span>${device.latitude}, ${device.longitude}</span>
+                </div>
             `;
-            li.addEventListener("click", () => selectDevice(device.index));
+            li.addEventListener("click", () => addDevice(device.index));
             list.appendChild(li);
         });
     } catch {
-        list.innerHTML = '<li style="color: var(--danger);">Failed to load devices.</li>';
+        list.innerHTML = '<li class="device-picker-loading" style="color: var(--danger);">Failed to load devices.</li>';
     }
 }
 
-async function selectDevice(index) {
+function closeAddDevice() {
+    document.getElementById("device-modal").classList.remove("active");
+}
+
+async function addDevice(index) {
     try {
-        const res = await fetch("/api/select-device", {
+        const res = await fetch("/api/add-device", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ index }),
         });
-        const data = await res.json();
         if (res.ok) {
-            const statusRes = await fetch("/api/status");
-            const statusData = await statusRes.json();
-            showApp(statusData.device);
+            closeAddDevice();
+            loadTrackedDevices();
         }
     } catch (e) {
-        console.error("Failed to select device:", e);
+        console.error("Failed to add device:", e);
+    }
+}
+
+async function removeDevice(deviceId) {
+    try {
+        const res = await fetch("/api/remove-device", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ device_id: deviceId }),
+        });
+        if (res.ok) {
+            // Remove marker from map
+            if (markers[deviceId]) {
+                map.removeLayer(markers[deviceId]);
+                delete markers[deviceId];
+            }
+            if (accuracyCircles[deviceId]) {
+                map.removeLayer(accuracyCircles[deviceId]);
+                delete accuracyCircles[deviceId];
+            }
+            loadTrackedDevices();
+        }
+    } catch (e) {
+        console.error("Failed to remove device:", e);
     }
 }
 
 // --- Main App ---
-function showApp(device) {
+function showApp() {
     hideAll();
     appLayout.classList.add("active");
-
-    document.getElementById("tracking-device-name").textContent = device.device_name;
-    document.getElementById("tracking-device-model").textContent = device.device_model;
-
     initMap();
+    loadTrackedDevices();
     startPolling();
-    loadHistoryDates();
+}
+
+async function loadTrackedDevices() {
+    const container = document.getElementById("tracked-devices-list");
+    const historySelect = document.getElementById("history-device-select");
+
+    try {
+        const res = await fetch("/api/tracked-devices");
+        const data = await res.json();
+
+        // Tracked devices list in sidebar
+        container.innerHTML = "";
+        historySelect.innerHTML = '<option value="">Select device</option>';
+
+        if (!data.devices.length) {
+            container.innerHTML = '<div class="no-devices">No devices tracked yet.</div>';
+            return;
+        }
+
+        data.devices.forEach((dev) => {
+            // Sidebar device card
+            const div = document.createElement("div");
+            div.className = "tracked-device-card";
+            div.innerHTML = `
+                <div class="tracked-device-dot" style="background: ${dev.color};"></div>
+                <div class="tracked-device-info">
+                    <div class="tracked-device-name">${dev.device_name}</div>
+                    <div class="tracked-device-model">${dev.device_model}</div>
+                </div>
+                <button class="tracked-device-remove" onclick="removeDevice('${dev.device_id.replace(/'/g, "\\'")}')">✕</button>
+            `;
+            container.appendChild(div);
+
+            // History dropdown option
+            const option = document.createElement("option");
+            option.value = dev.device_id;
+            option.textContent = dev.device_name;
+            historySelect.appendChild(option);
+        });
+
+        // Auto-select first device for history
+        if (data.devices.length && !selectedHistoryDevice) {
+            selectedHistoryDevice = data.devices[0].device_id;
+            historySelect.value = selectedHistoryDevice;
+            loadHistoryDates(selectedHistoryDevice);
+        }
+    } catch {
+        container.innerHTML = '<div class="no-devices">Failed to load devices.</div>';
+    }
 }
 
 function initMap() {
@@ -189,7 +271,7 @@ function initMap() {
     map = L.map("map", {
         zoomControl: true,
         attributionControl: true,
-    }).setView([1.3521, 103.8198], 13); // Default to Singapore
+    }).setView([1.3521, 103.8198], 13);
 
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
@@ -199,31 +281,9 @@ function initMap() {
 }
 
 function startPolling() {
-    pollLocation();
+    pollLocations();
     if (pollInterval) clearInterval(pollInterval);
-    pollInterval = setInterval(pollLocation, POLL_MS);
-}
-
-async function pollLocation() {
-    try {
-        const res = await fetch("/api/location");
-
-        if (res.status === 401) {
-            // Session expired — show login wall
-            stopPolling();
-            hideAll();
-            showLogin();
-            return;
-        }
-
-        if (!res.ok) return;
-
-        const loc = await res.json();
-        updateMap(loc);
-        updateInfoPanel(loc);
-    } catch {
-        // Network error, keep polling
-    }
+    pollInterval = setInterval(pollLocations, POLL_MS);
 }
 
 function stopPolling() {
@@ -233,37 +293,86 @@ function stopPolling() {
     }
 }
 
-function updateMap(loc) {
-    const latlng = [loc.latitude, loc.longitude];
+async function pollLocations() {
+    try {
+        const res = await fetch("/api/locations");
 
-    if (!marker) {
-        marker = L.circleMarker(latlng, {
-            radius: 8,
-            fillColor: "#3b82f6",
-            fillOpacity: 1,
-            color: "#fff",
-            weight: 2,
-        }).addTo(map);
-
-        map.setView(latlng, 16);
-    } else {
-        marker.setLatLng(latlng);
-    }
-
-    // Accuracy circle
-    if (loc.accuracy) {
-        if (!accuracyCircle) {
-            accuracyCircle = L.circle(latlng, {
-                radius: loc.accuracy,
-                color: "#3b82f6",
-                fillColor: "#3b82f6",
-                fillOpacity: 0.08,
-                weight: 1,
-            }).addTo(map);
-        } else {
-            accuracyCircle.setLatLng(latlng);
-            accuracyCircle.setRadius(loc.accuracy);
+        if (res.status === 401) {
+            stopPolling();
+            hideAll();
+            showLogin();
+            return;
         }
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const bounds = [];
+
+        data.locations.forEach((loc) => {
+            const latlng = [loc.latitude, loc.longitude];
+            bounds.push(latlng);
+
+            // Create or update marker
+            if (!markers[loc.device_id]) {
+                markers[loc.device_id] = L.circleMarker(latlng, {
+                    radius: 8,
+                    fillColor: loc.color,
+                    fillOpacity: 1,
+                    color: "#fff",
+                    weight: 2,
+                }).addTo(map);
+
+                // Tooltip with device name
+                markers[loc.device_id].bindTooltip(loc.device_name, {
+                    permanent: false,
+                    direction: "top",
+                    className: "device-tooltip",
+                });
+
+                // Click to show info
+                markers[loc.device_id].on("click", () => updateInfoPanel(loc));
+            } else {
+                markers[loc.device_id].setLatLng(latlng);
+                markers[loc.device_id].setStyle({ fillColor: loc.color });
+            }
+
+            // Accuracy circle
+            if (loc.accuracy) {
+                if (!accuracyCircles[loc.device_id]) {
+                    accuracyCircles[loc.device_id] = L.circle(latlng, {
+                        radius: loc.accuracy,
+                        color: loc.color,
+                        fillColor: loc.color,
+                        fillOpacity: 0.08,
+                        weight: 1,
+                    }).addTo(map);
+                } else {
+                    accuracyCircles[loc.device_id].setLatLng(latlng);
+                    accuracyCircles[loc.device_id].setRadius(loc.accuracy);
+                }
+            }
+        });
+
+        // Update info panel with first device if none selected
+        if (data.locations.length) {
+            const panel = document.getElementById("info-panel");
+            if (!panel.classList.contains("active")) {
+                updateInfoPanel(data.locations[0]);
+            }
+        }
+
+        // Fit bounds on first load
+        if (bounds.length && !window._initialBoundsSet) {
+            if (bounds.length === 1) {
+                map.setView(bounds[0], 16);
+            } else {
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+            window._initialBoundsSet = true;
+        }
+    } catch {
+        // Network error, keep polling
     }
 }
 
@@ -271,6 +380,7 @@ function updateInfoPanel(loc) {
     const panel = document.getElementById("info-panel");
     panel.classList.add("active");
 
+    document.getElementById("info-device-name").textContent = loc.device_name;
     const ts = loc.timestamp ? new Date(loc.timestamp).toLocaleTimeString() : "—";
     document.getElementById("info-updated").textContent = ts;
     document.getElementById("info-accuracy").textContent = loc.accuracy ? `${loc.accuracy.toFixed(1)}m` : "—";
@@ -279,16 +389,25 @@ function updateInfoPanel(loc) {
 }
 
 // --- History ---
-async function loadHistoryDates() {
+function onHistoryDeviceChange(select) {
+    selectedHistoryDevice = select.value;
+    if (selectedHistoryDevice) {
+        loadHistoryDates(selectedHistoryDevice);
+    } else {
+        document.getElementById("date-list").innerHTML = '<div class="date-list-empty">Select a device to view history.</div>';
+    }
+}
+
+async function loadHistoryDates(deviceId) {
     const dateList = document.getElementById("date-list");
     dateList.innerHTML = '<div class="date-list-empty">Loading...</div>';
 
     try {
-        const res = await fetch("/api/history/dates");
+        const res = await fetch(`/api/history/dates/${encodeURIComponent(deviceId)}`);
         const data = await res.json();
 
         if (!data.dates.length) {
-            dateList.innerHTML = '<div class="date-list-empty">No history yet. Tracking will build up over time.</div>';
+            dateList.innerHTML = '<div class="date-list-empty">No history yet for this device.</div>';
             return;
         }
 
@@ -303,9 +422,9 @@ async function loadHistoryDates() {
             const dist = formatDistance(entry.distance_m);
             div.innerHTML = `
                 <div class="date-item-title">${dateLabel}</div>
-                <div class="date-item-meta">${entry.points} points &middot; ${dist}</div>
+                <div class="date-item-meta">${entry.points} points · ${dist}</div>
             `;
-            div.addEventListener("click", () => loadHistory(entry.date, div));
+            div.addEventListener("click", () => loadHistory(deviceId, entry.date, div));
             dateList.appendChild(div);
         });
     } catch {
@@ -313,16 +432,13 @@ async function loadHistoryDates() {
     }
 }
 
-async function loadHistory(date, el) {
-    // Highlight active date
+async function loadHistory(deviceId, date, el) {
     document.querySelectorAll(".date-item").forEach((d) => d.classList.remove("active"));
     el.classList.add("active");
-
-    // Stop live polling while playing history
     stopPlayback();
 
     try {
-        const res = await fetch(`/api/history/${date}`);
+        const res = await fetch(`/api/history/${encodeURIComponent(deviceId)}/${date}`);
         const data = await res.json();
 
         if (!data.points.length) return;
@@ -339,16 +455,13 @@ async function loadHistory(date, el) {
         scrubber.max = playbackPoints.length - 1;
         scrubber.value = 0;
 
-        // Clear previous trail
         if (trailLine) {
             map.removeLayer(trailLine);
             trailLine = null;
         }
 
-        // Show first point
         showPlaybackPoint(0);
 
-        // Fit map to bounds
         const bounds = playbackPoints.map((p) => [p.latitude, p.longitude]);
         map.fitBounds(bounds, { padding: [50, 50] });
     } catch {
@@ -362,8 +475,9 @@ function showPlaybackPoint(index) {
     const point = playbackPoints[index];
     const latlng = [point.latitude, point.longitude];
 
-    if (!marker) {
-        marker = L.circleMarker(latlng, {
+    // Use a temporary playback marker
+    if (!window._playbackMarker) {
+        window._playbackMarker = L.circleMarker(latlng, {
             radius: 8,
             fillColor: "#3b82f6",
             fillOpacity: 1,
@@ -371,10 +485,9 @@ function showPlaybackPoint(index) {
             weight: 2,
         }).addTo(map);
     } else {
-        marker.setLatLng(latlng);
+        window._playbackMarker.setLatLng(latlng);
     }
 
-    // Draw trail up to current point
     const trailCoords = playbackPoints.slice(0, index + 1).map((p) => [p.latitude, p.longitude]);
     if (trailLine) {
         trailLine.setLatLngs(trailCoords);
@@ -401,12 +514,10 @@ function startPlayback() {
     if (!playbackPoints.length) return;
     isPlaying = true;
     document.getElementById("play-btn").textContent = "⏸";
-
-    // Stop live polling during playback
     stopPolling();
 
     const speed = parseFloat(document.getElementById("speed-select").value);
-    const baseDuration = 15000; // 15 seconds default
+    const baseDuration = 15000;
     const duration = baseDuration / speed;
     const intervalMs = duration / playbackPoints.length;
 
@@ -436,16 +547,18 @@ function stopPlayback() {
         map.removeLayer(trailLine);
         trailLine = null;
     }
+    if (window._playbackMarker) {
+        map.removeLayer(window._playbackMarker);
+        window._playbackMarker = null;
+    }
 }
 
-// Scrubber input
 document.getElementById("scrubber").addEventListener("input", (e) => {
     pausePlayback();
     playbackIndex = parseInt(e.target.value);
     showPlaybackPoint(playbackIndex);
 });
 
-// Speed change
 document.getElementById("speed-select").addEventListener("change", () => {
     if (isPlaying) {
         pausePlayback();
@@ -453,23 +566,14 @@ document.getElementById("speed-select").addEventListener("change", () => {
     }
 });
 
-// Back to live button
 function backToLive() {
     stopPlayback();
     document.getElementById("playback-bar").classList.remove("active");
     document.querySelectorAll(".date-item").forEach((d) => d.classList.remove("active"));
+    window._initialBoundsSet = false;
     startPolling();
 }
 
-// Switch device
-async function switchDevice() {
-    stopPolling();
-    stopPlayback();
-    appLayout.classList.remove("active");
-    showDeviceSelection();
-}
-
-// Sidebar toggle (mobile)
 function toggleSidebar() {
     document.getElementById("sidebar").classList.toggle("open");
 }

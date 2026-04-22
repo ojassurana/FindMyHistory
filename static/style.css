@@ -130,40 +130,6 @@ body {
     display: block;
 }
 
-/* --- Device Selection --- */
-.device-list {
-    list-style: none;
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.device-list li {
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    margin-bottom: 8px;
-    cursor: pointer;
-    transition: all 0.15s;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.device-list li:hover {
-    background: var(--surface-hover);
-    border-color: var(--accent);
-}
-
-.device-name {
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.device-model {
-    font-size: 12px;
-    color: var(--text-muted);
-}
-
 /* --- Main App Layout --- */
 .app-layout {
     display: none;
@@ -187,52 +153,170 @@ body {
 }
 
 .sidebar-header {
-    padding: 20px;
+    padding: 16px 20px;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .sidebar-header h2 {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
     letter-spacing: -0.3px;
 }
 
-.sidebar-header .subtitle {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 2px;
-}
-
-.switch-device-btn {
+.add-device-btn {
     background: none;
     border: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 11px;
-    padding: 4px 10px;
+    color: var(--accent);
+    font-size: 12px;
+    padding: 5px 12px;
     border-radius: 6px;
     cursor: pointer;
-    margin-top: 8px;
     font-family: var(--font);
+    font-weight: 500;
     transition: all 0.15s;
 }
 
-.switch-device-btn:hover {
+.add-device-btn:hover {
     border-color: var(--accent);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+/* --- Tracked Devices List --- */
+.tracked-devices-list {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.tracked-device-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    transition: background 0.15s;
+}
+
+.tracked-device-card:hover {
+    background: var(--surface-hover);
+}
+
+.tracked-device-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+    50% { opacity: 0.7; box-shadow: 0 0 8px 2px currentColor; }
+}
+
+.tracked-device-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.tracked-device-name {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tracked-device-model {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.tracked-device-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.15s;
+    opacity: 0;
+}
+
+.tracked-device-card:hover .tracked-device-remove {
+    opacity: 1;
+}
+
+.tracked-device-remove:hover {
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.no-devices {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 16px;
+}
+
+/* --- Sidebar Divider --- */
+.sidebar-divider {
+    height: 1px;
+    background: var(--border);
+}
+
+/* --- History Section --- */
+.history-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.history-header {
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.history-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.history-device-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
     color: var(--text);
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-family: var(--font);
+    cursor: pointer;
+    outline: none;
+    max-width: 160px;
 }
 
 .date-list {
     flex: 1;
     overflow-y: auto;
-    padding: 12px;
+    padding: 0 12px 12px;
 }
 
 .date-item {
     padding: 10px 12px;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
     transition: all 0.15s;
     margin-bottom: 4px;
 }
@@ -344,6 +428,26 @@ body {
     outline: none;
 }
 
+.back-to-live-btn {
+    width: 100%;
+    margin-top: 12px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font);
+    text-align: center;
+    transition: all 0.15s;
+}
+
+.back-to-live-btn:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
 /* --- Map --- */
 .map-container {
     flex: 1;
@@ -365,11 +469,10 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 14px 24px;
-    display: flex;
-    gap: 32px;
+    display: none;
+    gap: 28px;
     z-index: 1000;
     backdrop-filter: blur(12px);
-    display: none;
 }
 
 .info-panel.active {
@@ -394,6 +497,125 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+/* --- Add Device Modal --- */
+.device-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.device-modal.active {
+    display: flex;
+}
+
+.device-modal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    width: 480px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.device-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.device-modal-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+}
+
+.device-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px;
+    transition: color 0.15s;
+}
+
+.device-modal-close:hover {
+    color: var(--text);
+}
+
+.device-modal-desc {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 20px;
+}
+
+.device-picker-list {
+    list-style: none;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.device-picker-list li {
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.device-picker-list li:hover {
+    background: var(--surface-hover);
+    border-color: var(--accent);
+}
+
+.device-picker-info {
+    flex: 1;
+}
+
+.device-name {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.device-model {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+.device-picker-coords {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    background: var(--bg);
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+.device-picker-loading {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 40px 20px;
+    list-style: none;
+}
+
 /* --- Sidebar Toggle (mobile) --- */
 .sidebar-toggle {
     display: none;
@@ -411,6 +633,23 @@ body {
     font-size: 18px;
     align-items: center;
     justify-content: center;
+}
+
+/* --- Device Tooltip --- */
+.device-tooltip {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text) !important;
+    font-family: var(--font) !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    padding: 4px 10px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+}
+
+.device-tooltip::before {
+    border-top-color: var(--border) !important;
 }
 
 /* --- Mobile --- */
@@ -437,11 +676,13 @@ body {
         left: 12px;
         right: 12px;
         transform: none;
-        gap: 16px;
+        gap: 12px;
         justify-content: space-around;
+        flex-wrap: wrap;
     }
 
-    .login-card {
+    .login-card,
+    .device-modal-card {
         margin: 16px;
     }
 }

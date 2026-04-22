@@ -1,5 +1,5 @@
 """
-FindMyHistory — Live iCloud location tracker with historical playback.
+FindMyHistory — Live iCloud multi-device location tracker with historical playback.
 """
 
 import asyncio
@@ -7,7 +7,6 @@ import json
 import math
 import os
 import tempfile
-import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,12 +27,15 @@ supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVIC
 
 # --- Global state ---
 icloud_api = None
-tracked_device = None
-last_saved_location = None
+tracked_devices = {}  # {device_id: icloud_device_object}
+last_saved_locations = {}  # {device_id: {latitude, longitude}}
 polling_task = None
 POLL_INTERVAL = 5
 MIN_DISTANCE_M = 20
 COOKIE_DIR = tempfile.mkdtemp(prefix="icloud_cookies_")
+
+# Device colors for map pins
+DEVICE_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#a855f7", "#ec4899", "#06b6d4", "#84cc16"]
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -93,23 +95,27 @@ def save_cookies_to_db(apple_id):
         ).execute()
 
 
-def get_tracked_device_from_db():
-    """Get the currently tracked device from Supabase."""
-    result = (
-        supabase.table("tracked_device")
-        .select("*")
-        .order("created_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-    return result.data[0] if result.data else None
+def get_all_tracked_devices_from_db():
+    """Get all tracked devices from Supabase."""
+    result = supabase.table("tracked_device").select("*").order("created_at", desc=False).execute()
+    return result.data
 
 
 def save_tracked_device_to_db(device_id, device_name, device_model):
-    """Save the selected device to Supabase."""
-    supabase.table("tracked_device").insert(
+    """Save a device to the tracked list in Supabase."""
+    # Check if already tracked
+    existing = supabase.table("tracked_device").select("id").eq("device_id", device_id).execute()
+    if existing.data:
+        return existing.data[0]
+    result = supabase.table("tracked_device").insert(
         {"device_id": device_id, "device_name": device_name, "device_model": device_model}
     ).execute()
+    return result.data[0] if result.data else None
+
+
+def remove_tracked_device_from_db(device_id):
+    """Remove a device from the tracked list (keeps history)."""
+    supabase.table("tracked_device").delete().eq("device_id", device_id).execute()
 
 
 def save_location(device_id, location):
@@ -127,38 +133,52 @@ def save_location(device_id, location):
     ).execute()
 
 
+def find_icloud_device_by_id(device_id):
+    """Find an iCloud device object by its ID."""
+    if not icloud_api:
+        return None
+    for device in icloud_api.devices:
+        if device.data.get("id", "") == device_id:
+            return device
+    return None
+
+
 async def poll_location():
-    """Background task: poll iCloud for location every POLL_INTERVAL seconds."""
-    global last_saved_location, icloud_api, tracked_device
+    """Background task: poll iCloud for all tracked devices every POLL_INTERVAL seconds."""
+    global icloud_api, tracked_devices
 
     while True:
         try:
-            if icloud_api and tracked_device:
+            if icloud_api:
                 # Check if session is still valid
                 if icloud_api.requires_2fa or icloud_api.requires_2sa:
                     icloud_api = None
-                    tracked_device = None
+                    tracked_devices = {}
                     continue
 
-                location = tracked_device.location
-                if location and location.get("latitude"):
-                    # Check if moved enough to save
-                    should_save = True
-                    if last_saved_location:
-                        dist = haversine(
-                            last_saved_location["latitude"],
-                            last_saved_location["longitude"],
-                            location["latitude"],
-                            location["longitude"],
-                        )
-                        if dist < MIN_DISTANCE_M:
-                            should_save = False
+                # Poll each tracked device
+                for device_id, device in list(tracked_devices.items()):
+                    try:
+                        location = device.location
+                        if location and location.get("latitude"):
+                            should_save = True
+                            last = last_saved_locations.get(device_id)
+                            if last:
+                                dist = haversine(
+                                    last["latitude"], last["longitude"],
+                                    location["latitude"], location["longitude"],
+                                )
+                                if dist < MIN_DISTANCE_M:
+                                    should_save = False
 
-                    if should_save:
-                        db_device = get_tracked_device_from_db()
-                        if db_device:
-                            save_location(db_device["device_id"], location)
-                            last_saved_location = location
+                            if should_save:
+                                save_location(device_id, location)
+                                last_saved_locations[device_id] = {
+                                    "latitude": location["latitude"],
+                                    "longitude": location["longitude"],
+                                }
+                    except Exception as e:
+                        print(f"[poll] Error polling {device_id[:20]}...: {e}")
         except Exception as e:
             print(f"[poll] Error: {e}")
 
@@ -168,7 +188,7 @@ async def poll_location():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start background polling on app startup."""
-    global polling_task, icloud_api, tracked_device
+    global polling_task, icloud_api, tracked_devices
 
     # Try to restore session from DB
     try:
@@ -186,34 +206,31 @@ async def lifespan(app: FastAPI):
                 api = PyiCloudService(apple_id, cookie_directory=COOKIE_DIR)
                 if not api.requires_2fa and not api.requires_2sa:
                     icloud_api = api
-                    # Restore tracked device
-                    db_device = get_tracked_device_from_db()
-                    if db_device:
-                        for device in icloud_api.devices:
-                            if db_device["device_id"] in device.data.get("id", ""):
-                                tracked_device = device
-                                break
-                    print(f"[startup] Restored session for {apple_id}")
+                    # Restore all tracked devices
+                    db_devices = get_all_tracked_devices_from_db()
+                    for db_dev in db_devices:
+                        icloud_dev = find_icloud_device_by_id(db_dev["device_id"])
+                        if icloud_dev:
+                            tracked_devices[db_dev["device_id"]] = icloud_dev
+                    print(f"[startup] Restored session for {apple_id}, tracking {len(tracked_devices)} devices")
     except Exception as e:
         print(f"[startup] Could not restore session: {e}")
 
-    # Load last saved location from DB to avoid duplicate saves on restart
-    global last_saved_location
+    # Load last saved locations from DB for all tracked devices
     try:
-        db_device = get_tracked_device_from_db()
-        if db_device:
+        for device_id in tracked_devices:
             last_loc = (
                 supabase.table("location_history")
                 .select("latitude,longitude")
-                .eq("device_id", db_device["device_id"])
+                .eq("device_id", device_id)
                 .order("created_at", desc=True)
                 .limit(1)
                 .execute()
             )
             if last_loc.data:
-                last_saved_location = last_loc.data[0]
+                last_saved_locations[device_id] = last_loc.data[0]
     except Exception as e:
-        print(f"[startup] Could not load last saved location: {e}")
+        print(f"[startup] Could not load last saved locations: {e}")
 
     polling_task = asyncio.create_task(poll_location())
     yield
@@ -235,15 +252,15 @@ async def index(request: Request):
 
 @app.get("/api/status")
 async def api_status():
-    """Check if there's an active session and tracked device."""
+    """Check if there's an active session and tracked devices."""
     if icloud_api and not icloud_api.requires_2fa and not icloud_api.requires_2sa:
-        db_device = get_tracked_device_from_db()
+        db_devices = get_all_tracked_devices_from_db()
         return {
             "authenticated": True,
-            "has_device": db_device is not None,
-            "device": db_device,
+            "has_devices": len(db_devices) > 0,
+            "devices": db_devices,
         }
-    return {"authenticated": False, "has_device": False, "device": None}
+    return {"authenticated": False, "has_devices": False, "devices": []}
 
 
 @app.post("/api/login")
@@ -296,7 +313,6 @@ async def api_verify_2fa(request: Request):
 
     result = icloud_api.validate_2fa_code(code)
     if result:
-        # Save cookies after successful 2FA
         session = (
             supabase.table("icloud_session")
             .select("apple_id")
@@ -314,29 +330,46 @@ async def api_verify_2fa(request: Request):
 
 @app.get("/api/devices")
 async def api_devices():
-    """List all available iCloud devices."""
+    """List all available iCloud devices that have a location."""
     if not icloud_api:
         return JSONResponse({"error": "Not authenticated."}, status_code=401)
+
+    # Get already tracked device IDs
+    db_devices = get_all_tracked_devices_from_db()
+    tracked_ids = {d["device_id"] for d in db_devices}
 
     devices = []
     for i, device in enumerate(icloud_api.devices):
         status = device.status()
+        location = device.location
+        device_id = device.data.get("id", "")
+
+        # Only show devices with a location
+        if not location or not location.get("latitude"):
+            continue
+
+        # Skip already tracked devices
+        if device_id in tracked_ids:
+            continue
+
         devices.append(
             {
                 "index": i,
-                "id": device.data.get("id", ""),
+                "id": device_id,
                 "name": status.get("name", f"Device {i}"),
                 "model": status.get("deviceDisplayName", "Unknown"),
                 "battery": status.get("batteryLevel"),
+                "latitude": round(location["latitude"], 4),
+                "longitude": round(location["longitude"], 4),
             }
         )
     return {"devices": devices}
 
 
-@app.post("/api/select-device")
-async def api_select_device(request: Request):
-    """Select which device to track."""
-    global tracked_device, last_saved_location
+@app.post("/api/add-device")
+async def api_add_device(request: Request):
+    """Add a device to the tracked list."""
+    global tracked_devices
     if not icloud_api:
         return JSONResponse({"error": "Not authenticated."}, status_code=401)
 
@@ -348,63 +381,101 @@ async def api_select_device(request: Request):
         return JSONResponse({"error": "Invalid device index."}, status_code=400)
 
     device = devices_list[device_index]
-    tracked_device = device
-    last_saved_location = None
-
-    status = device.status()
     device_id = device.data.get("id", "")
+    status = device.status()
     device_name = status.get("name", "Unknown")
     device_model = status.get("deviceDisplayName", "Unknown")
 
+    # Add to DB and memory
     save_tracked_device_to_db(device_id, device_name, device_model)
-    return {"status": "ok", "device": {"name": device_name, "model": device_model}}
+    tracked_devices[device_id] = device
+    last_saved_locations.pop(device_id, None)
+
+    return {"status": "ok", "device": {"device_id": device_id, "name": device_name, "model": device_model}}
 
 
-@app.get("/api/location")
-async def api_location():
-    """Get the current live location."""
-    if not icloud_api or not tracked_device:
-        return JSONResponse({"error": "Not tracking."}, status_code=400)
+@app.post("/api/remove-device")
+async def api_remove_device(request: Request):
+    """Remove a device from tracking (keeps history)."""
+    global tracked_devices
+    body = await request.json()
+    device_id = body.get("device_id")
 
-    try:
-        if icloud_api.requires_2fa or icloud_api.requires_2sa:
-            return JSONResponse({"error": "Session expired."}, status_code=401)
+    if not device_id:
+        return JSONResponse({"error": "device_id is required."}, status_code=400)
 
-        location = tracked_device.location
-        if location and location.get("latitude"):
-            status = tracked_device.status()
-            return {
-                "latitude": location["latitude"],
-                "longitude": location["longitude"],
-                "accuracy": location.get("horizontalAccuracy"),
-                "position_type": location.get("positionType"),
-                "altitude": location.get("altitude"),
-                "timestamp": location.get("timeStamp"),
-                "is_old": location.get("isOld"),
-                "battery": status.get("batteryLevel"),
-            }
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    remove_tracked_device_from_db(device_id)
+    tracked_devices.pop(device_id, None)
+    last_saved_locations.pop(device_id, None)
 
-    return JSONResponse({"error": "Location unavailable."}, status_code=404)
+    return {"status": "ok"}
 
 
-@app.get("/api/history/dates")
-async def api_history_dates():
-    """Get all dates that have location history, with point count and distance."""
-    db_device = get_tracked_device_from_db()
-    if not db_device:
-        return {"dates": []}
+@app.get("/api/tracked-devices")
+async def api_tracked_devices():
+    """Get all currently tracked devices with their colors."""
+    db_devices = get_all_tracked_devices_from_db()
+    result = []
+    for i, dev in enumerate(db_devices):
+        result.append({
+            "device_id": dev["device_id"],
+            "device_name": dev["device_name"],
+            "device_model": dev["device_model"],
+            "color": DEVICE_COLORS[i % len(DEVICE_COLORS)],
+        })
+    return {"devices": result}
 
+
+@app.get("/api/locations")
+async def api_locations():
+    """Get current live locations for all tracked devices."""
+    if not icloud_api:
+        return JSONResponse({"error": "Not authenticated."}, status_code=401)
+
+    if icloud_api.requires_2fa or icloud_api.requires_2sa:
+        return JSONResponse({"error": "Session expired."}, status_code=401)
+
+    db_devices = get_all_tracked_devices_from_db()
+    locations = []
+
+    for i, db_dev in enumerate(db_devices):
+        device = tracked_devices.get(db_dev["device_id"])
+        if not device:
+            continue
+
+        try:
+            location = device.location
+            if location and location.get("latitude"):
+                status = device.status()
+                locations.append({
+                    "device_id": db_dev["device_id"],
+                    "device_name": db_dev["device_name"],
+                    "color": DEVICE_COLORS[i % len(DEVICE_COLORS)],
+                    "latitude": location["latitude"],
+                    "longitude": location["longitude"],
+                    "accuracy": location.get("horizontalAccuracy"),
+                    "position_type": location.get("positionType"),
+                    "timestamp": location.get("timeStamp"),
+                    "is_old": location.get("isOld"),
+                    "battery": status.get("batteryLevel"),
+                })
+        except Exception as e:
+            print(f"[location] Error for {db_dev['device_name']}: {e}")
+
+    return {"locations": locations}
+
+
+@app.get("/api/history/dates/{device_id:path}")
+async def api_history_dates(device_id: str):
+    """Get all dates that have location history for a specific device."""
     result = (
         supabase.table("location_history")
         .select("latitude,longitude,created_at")
-        .eq("device_id", db_device["device_id"])
+        .eq("device_id", device_id)
         .order("created_at", desc=False)
         .execute()
     )
 
-    # Group by date and compute stats
     date_stats = {}
     for row in result.data:
         dt = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
@@ -430,20 +501,16 @@ async def api_history_dates():
     return {"dates": dates}
 
 
-@app.get("/api/history/{date}")
-async def api_history_for_date(date: str):
-    """Get all location points for a specific date."""
-    db_device = get_tracked_device_from_db()
-    if not db_device:
-        return {"points": [], "total_distance_m": 0}
-
+@app.get("/api/history/{device_id:path}/{date}")
+async def api_history_for_date(device_id: str, date: str):
+    """Get all location points for a specific device on a specific date."""
     start = f"{date}T00:00:00+00:00"
     end = f"{date}T23:59:59+00:00"
 
     result = (
         supabase.table("location_history")
         .select("*")
-        .eq("device_id", db_device["device_id"])
+        .eq("device_id", device_id)
         .gte("created_at", start)
         .lte("created_at", end)
         .order("created_at", desc=False)

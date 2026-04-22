@@ -143,56 +143,46 @@ def find_icloud_device_by_id(device_id):
     return None
 
 
-def _poll_sync():
-    """Synchronous poll — runs all blocking iCloud calls in one shot."""
-    global icloud_api, tracked_devices
-
-    if not icloud_api:
-        return
-
-    if icloud_api.requires_2fa or icloud_api.requires_2sa:
-        icloud_api = None
-        tracked_devices = {}
-        return
-
-    db_devices = get_all_tracked_devices_from_db()
-    db_ids = {d["device_id"] for d in db_devices}
-
-    # Iterate devices (triggers iCloud refresh internally)
-    for device in icloud_api.devices:
-        device_id = device.data.get("id", "")
-        if device_id not in db_ids:
-            continue
-
-        location = device.location
-        if not location or not location.get("latitude"):
-            continue
-
-        should_save = True
-        last = last_saved_locations.get(device_id)
-        if last:
-            dist = haversine(
-                last["latitude"], last["longitude"],
-                location["latitude"], location["longitude"],
-            )
-            if dist < MIN_DISTANCE_M:
-                should_save = False
-
-        if should_save:
-            save_location(device_id, location)
-            last_saved_locations[device_id] = {
-                "latitude": location["latitude"],
-                "longitude": location["longitude"],
-            }
-            print(f"[poll] Saved: {location['latitude']:.4f},{location['longitude']:.4f}")
+# latest_locations is populated by /api/locations endpoint (browser polling)
+# The background task reads from this cache and saves to Supabase
+latest_locations = {}  # {device_id: {latitude, longitude, ...}}
 
 
 async def poll_location():
-    """Background task: runs the blocking poll in a thread every POLL_INTERVAL seconds."""
+    """Background task: save locations from cache to Supabase every POLL_INTERVAL seconds.
+
+    The actual iCloud refresh is triggered by browser polling /api/locations.
+    This task just checks the cached data and persists new points to the database.
+    """
     print("[poll] Background poll task started")
     while True:
         try:
-            await asyncio.to_thread(_poll_sync)
+            db_devices = get_all_tracked_devices_from_db()
+            db_ids = {d["device_id"] for d in db_devices}
+
+            for device_id, location in latest_locations.items():
+                if device_id not in db_ids:
+                    continue
+                if not location or not location.get("latitude"):
+                    continue
+
+                should_save = True
+                last = last_saved_locations.get(device_id)
+                if last:
+                    dist = haversine(
+                        last["latitude"], last["longitude"],
+                        location["latitude"], location["longitude"],
+                    )
+                    if dist < MIN_DISTANCE_M:
+                        should_save = False
+
+                if should_save:
+                    save_location(device_id, location)
+                    last_saved_locations[device_id] = {
+                        "latitude": location["latitude"],
+                        "longitude": location["longitude"],
+                    }
+                    print(f"[poll] Saved: {location['latitude']:.4f},{location['longitude']:.4f}")
         except Exception as e:
             print(f"[poll] Error: {e}")
         await asyncio.sleep(POLL_INTERVAL)
@@ -481,7 +471,7 @@ async def api_locations():
             location = device.location
             if location and location.get("latitude"):
                 status = device.status()
-                locations.append({
+                loc_data = {
                     "device_id": db_dev["device_id"],
                     "device_name": db_dev["device_name"],
                     "color": DEVICE_COLORS[i % len(DEVICE_COLORS)],
@@ -492,7 +482,10 @@ async def api_locations():
                     "timestamp": location.get("timeStamp"),
                     "is_old": location.get("isOld"),
                     "battery": status.get("batteryLevel"),
-                })
+                }
+                locations.append(loc_data)
+                # Cache for background save task
+                latest_locations[db_dev["device_id"]] = location
         except Exception as e:
             print(f"[location] Error for {db_dev['device_name']}: {e}")
 

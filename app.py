@@ -179,22 +179,12 @@ async def poll_location():
                         tracked_devices.pop(did, None)
                         last_saved_locations.pop(did, None)
 
-                # Refresh all device data from iCloud (blocking call, run in thread)
-                try:
-                    await asyncio.to_thread(icloud_api.devices.refresh)
-                except Exception as e:
-                    print(f"[poll] Refresh failed: {e}")
-                    await asyncio.sleep(POLL_INTERVAL)
-                    continue
-
-                # Re-resolve device references after refresh (refresh creates new objects)
-                for did in list(tracked_devices.keys()):
-                    fresh = find_icloud_device_by_id(did)
-                    if fresh:
-                        tracked_devices[did] = fresh
-
-                # Poll each tracked device
-                for device_id, device in list(tracked_devices.items()):
+                # Iterate all iCloud devices and match against tracked ones
+                db_ids = {d["device_id"] for d in db_devices}
+                for device in icloud_api.devices:
+                    device_id = device.data.get("id", "")
+                    if device_id not in db_ids:
+                        continue
                     try:
                         location = device.location
                         if location and location.get("latitude"):

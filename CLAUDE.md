@@ -16,6 +16,11 @@ cd FindMyHistory
 - Use descriptive commit messages
 - Keep PRs focused and small
 
+## Secrets & Credentials
+- All credentials (bot tokens, API keys, etc.) must be stored in a `.env` file — never hardcoded
+- `.env` is in `.gitignore` and must never be committed
+- Reference secrets via environment variables (e.g. `process.env.BOT_TOKEN`)
+
 ## Design
 - Prioritize a sleek, polished UI — aesthetics and user experience matter
 - Favor clean layouts, smooth interactions, and modern design patterns

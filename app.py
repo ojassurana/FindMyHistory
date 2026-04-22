@@ -240,9 +240,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[startup] Could not load last saved locations: {e}")
 
-    polling_task = asyncio.create_task(poll_location())
     yield
-    polling_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -489,8 +487,24 @@ async def api_locations():
                     "battery": status.get("batteryLevel"),
                 }
                 locations.append(loc_data)
-                # Cache for background save task
-                latest_locations[db_dev["device_id"]] = location
+                # Save to DB directly (20m threshold)
+                device_id = db_dev["device_id"]
+                should_save = True
+                last = last_saved_locations.get(device_id)
+                if last:
+                    dist = haversine(
+                        last["latitude"], last["longitude"],
+                        location["latitude"], location["longitude"],
+                    )
+                    if dist < MIN_DISTANCE_M:
+                        should_save = False
+                if should_save:
+                    save_location(device_id, location)
+                    last_saved_locations[device_id] = {
+                        "latitude": location["latitude"],
+                        "longitude": location["longitude"],
+                    }
+                    print(f"[save] {db_dev['device_name']}: {location['latitude']:.4f},{location['longitude']:.4f}", flush=True)
         except Exception as e:
             print(f"[location] Error for {db_dev['device_name']}: {e}")
 

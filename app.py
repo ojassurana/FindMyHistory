@@ -634,17 +634,25 @@ async def api_history_for_date(device_id: str, date: str):
 
 
 def find_device_by_name(name: str):
-    """Find a tracked device by partial name match (case-insensitive)."""
+    """Find a tracked device by partial name match (case-insensitive).
+    Returns (device, None) on match, or (None, error_response) with available devices."""
     db_devices = get_all_tracked_devices_from_db()
     name_lower = name.lower()
     for dev in db_devices:
         if name_lower in dev["device_name"].lower():
-            return dev
+            return dev, None
     # Fall back to device_id match
     for dev in db_devices:
         if dev["device_id"] == name:
-            return dev
-    return None
+            return dev, None
+    # No match — return available devices for AI agent self-correction
+    available = [{"name": d["device_name"], "model": d["device_model"]} for d in db_devices]
+    error = JSONResponse({
+        "error": f"No tracked device matching '{name}'.",
+        "available_devices": available,
+        "hint": "Try again with one of the available device names (partial match supported).",
+    }, status_code=404)
+    return None, error
 
 
 @app.get("/api/where/{name}")
@@ -654,9 +662,9 @@ async def api_where(name: str, time: str = None):
     - No time param: returns latest live location.
     - With time param (ISO format or HH:MM): returns closest saved point to that time today.
     """
-    device = find_device_by_name(name)
-    if not device:
-        return JSONResponse({"error": f"No tracked device matching '{name}'."}, status_code=404)
+    device, err = find_device_by_name(name)
+    if err:
+        return err
 
     device_id = device["device_id"]
 
@@ -727,13 +735,12 @@ async def api_where(name: str, time: str = None):
 @app.get("/api/distance/{name1}/{name2}")
 async def api_distance(name1: str, name2: str):
     """Distance between two tracked devices (current live locations)."""
-    dev1 = find_device_by_name(name1)
-    dev2 = find_device_by_name(name2)
-
-    if not dev1:
-        return JSONResponse({"error": f"No tracked device matching '{name1}'."}, status_code=404)
-    if not dev2:
-        return JSONResponse({"error": f"No tracked device matching '{name2}'."}, status_code=404)
+    dev1, err1 = find_device_by_name(name1)
+    if err1:
+        return err1
+    dev2, err2 = find_device_by_name(name2)
+    if err2:
+        return err2
 
     loc1 = live_locations.get(dev1["device_id"])
     loc2 = live_locations.get(dev2["device_id"])

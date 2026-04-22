@@ -148,45 +148,48 @@ def find_icloud_device_by_id(device_id):
 latest_locations = {}  # {device_id: {latitude, longitude, ...}}
 
 
-async def poll_location():
-    """Background task: save locations from cache to Supabase every POLL_INTERVAL seconds.
+def _save_tick():
+    """Sync function: check cached locations and save new ones to Supabase."""
+    cached = len(latest_locations)
+    if cached == 0:
+        return
 
-    The actual iCloud refresh is triggered by browser polling /api/locations.
-    This task just checks the cached data and persists new points to the database.
-    """
+    db_devices = get_all_tracked_devices_from_db()
+    db_ids = {d["device_id"] for d in db_devices}
+
+    for device_id, location in list(latest_locations.items()):
+        if device_id not in db_ids:
+            continue
+        if not location or not location.get("latitude"):
+            continue
+
+        should_save = True
+        last = last_saved_locations.get(device_id)
+        if last:
+            dist = haversine(
+                last["latitude"], last["longitude"],
+                location["latitude"], location["longitude"],
+            )
+            if dist < MIN_DISTANCE_M:
+                should_save = False
+
+        if should_save:
+            save_location(device_id, location)
+            last_saved_locations[device_id] = {
+                "latitude": location["latitude"],
+                "longitude": location["longitude"],
+            }
+            print(f"[poll] Saved: {location['latitude']:.4f},{location['longitude']:.4f}", flush=True)
+
+
+async def poll_location():
+    """Background task: run save tick in a thread every POLL_INTERVAL seconds."""
     print("[poll] Background poll task started", flush=True)
     while True:
         try:
-            cached = len(latest_locations)
-            print(f"[poll] tick: {cached} cached locations", flush=True)
-            db_devices = get_all_tracked_devices_from_db()
-            db_ids = {d["device_id"] for d in db_devices}
-
-            for device_id, location in latest_locations.items():
-                if device_id not in db_ids:
-                    continue
-                if not location or not location.get("latitude"):
-                    continue
-
-                should_save = True
-                last = last_saved_locations.get(device_id)
-                if last:
-                    dist = haversine(
-                        last["latitude"], last["longitude"],
-                        location["latitude"], location["longitude"],
-                    )
-                    if dist < MIN_DISTANCE_M:
-                        should_save = False
-
-                if should_save:
-                    save_location(device_id, location)
-                    last_saved_locations[device_id] = {
-                        "latitude": location["latitude"],
-                        "longitude": location["longitude"],
-                    }
-                    print(f"[poll] Saved: {location['latitude']:.4f},{location['longitude']:.4f}")
+            await asyncio.to_thread(_save_tick)
         except Exception as e:
-            print(f"[poll] Error: {e}")
+            print(f"[poll] Error: {e}", flush=True)
         await asyncio.sleep(POLL_INTERVAL)
 
 

@@ -154,9 +154,11 @@ async def poll_location():
     The actual iCloud refresh is triggered by browser polling /api/locations.
     This task just checks the cached data and persists new points to the database.
     """
-    print("[poll] Background poll task started")
+    print("[poll] Background poll task started", flush=True)
     while True:
         try:
+            cached = len(latest_locations)
+            print(f"[poll] tick: {cached} cached locations", flush=True)
             db_devices = get_all_tracked_devices_from_db()
             db_ids = {d["device_id"] for d in db_devices}
 

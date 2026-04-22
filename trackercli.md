@@ -8,6 +8,37 @@ FindMyHistory is a **live location tracking system** that tracks iPhones via App
 
 ---
 
+## Response Style — KEEP IT SHORT
+
+The agent MUST keep all responses **short and to the point**. No fluff, no narration, no explaining what you're about to do or what you just did. Just the data.
+
+- Present results as a **compact table** with the key info (device, location, distance, etc.)
+- If there's a distance, show it clearly (meters + km)
+- If there's a `note` from the API (e.g., data gap), include it as a single line below the table
+- Do NOT add commentary like "They're pretty close" or "about a 5-minute walk" — just the numbers
+- Do NOT narrate your API calls or explain your process — the user doesn't care, they want the answer
+- Do NOT repeat device info the user already knows
+
+**Good example:**
+```
+| Device | Location |
+|---|---|
+| Ojas's 17 Pro Max | 1.3979, 103.7470 |
+| iPad (2) | 1.3977, 103.7507 |
+
+**Distance: 416.8m (0.42 km)**
+```
+
+**Bad example:**
+```
+Let me first check the tracked devices... OK, I found 3 devices.
+Now let me get the distance... Here's the result:
+[table]
+They're pretty close — about a 5-minute walk apart!
+```
+
+---
+
 ## IMPORTANT: First Thing To Do
 
 **Before handling ANY location request, the agent MUST call `/api/tracked-devices` first** to get the list of all currently tracked devices. This gives the agent context about who is being tracked, their device names, and models. Cache this for the rest of the conversation — no need to call it again unless the user adds or removes a device.

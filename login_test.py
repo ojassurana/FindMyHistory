@@ -1,25 +1,23 @@
 """
 Simple CLI script to test the pyicloud login flow.
-Helps identify the full authentication behavior:
-  1. Apple ID + password (skipped if valid session cookie exists)
-  2. 2FA prompt (if enabled)
-  3. Device selection
-  4. Location fetch
+Automatically targets "Ojas's 17 Pro Max" and continuously prints location.
 
 Stores the Apple ID and cookies locally so repeat runs are fully automatic.
 """
 
 import json
-import os
+import time
+from datetime import datetime
 from pathlib import Path
 from pyicloud import PyiCloudService
 
 COOKIE_DIR = Path(__file__).parent / ".icloud_cookies"
 SESSION_FILE = Path(__file__).parent / ".icloud_session.json"
+TARGET_DEVICE = "17 Pro Max"
+POLL_INTERVAL = 5
 
 
 def load_saved_session():
-    """Load the saved Apple ID from the session file."""
     if SESSION_FILE.exists():
         data = json.loads(SESSION_FILE.read_text())
         return data.get("apple_id")
@@ -27,26 +25,32 @@ def load_saved_session():
 
 
 def save_session(apple_id):
-    """Save the Apple ID to the session file."""
     SESSION_FILE.write_text(json.dumps({"apple_id": apple_id}))
 
 
+def find_device(api):
+    for device in api.devices:
+        if TARGET_DEVICE in device.status().get("name", ""):
+            return device
+    return None
+
+
 def main():
-    print("=== iCloud Login Test ===\n")
+    print("=== iCloud Location Tracker ===\n")
 
     saved_apple_id = load_saved_session()
     api = None
 
-    # Try reusing cached session with saved Apple ID
+    # Try reusing cached session
     if saved_apple_id:
-        print(f"Saved Apple ID found: {saved_apple_id}")
-        print("Checking for cached session...")
+        print(f"Saved Apple ID: {saved_apple_id}")
+        print("Checking cached session...")
         try:
             api = PyiCloudService(saved_apple_id, cookie_directory=str(COOKIE_DIR))
             if not api.requires_2fa and not api.requires_2sa:
-                print("Valid session — skipping login.\n")
+                print("Valid session found.\n")
             else:
-                print("Session expired — need to re-authenticate.")
+                print("Session expired.")
                 api = None
         except Exception:
             print("Cached session invalid.")
@@ -65,52 +69,63 @@ def main():
     # Handle 2FA
     if api.requires_2fa:
         print("\n2FA is required.")
-        code = input("Enter the 2FA code sent to your device: ").strip()
+        code = input("Enter the 2FA code: ").strip()
         result = api.validate_2fa_code(code)
-        print(f"2FA validation: {'Success' if result else 'Failed'}")
+        print(f"2FA: {'Success' if result else 'Failed'}")
         if not result:
-            print("Exiting.")
             return
 
-    # Handle 2-step verification (older accounts)
     elif api.requires_2sa:
-        print("\n2-step verification is required.")
+        print("\n2-step verification required.")
         devices = api.trusted_devices
         for i, device in enumerate(devices):
-            name = device.get("deviceName", f"Device {i}")
-            print(f"  [{i}] {name}")
-        idx = int(input("Choose a device to receive the code: ").strip())
+            print(f"  [{i}] {device.get('deviceName', f'Device {i}')}")
+        idx = int(input("Device to receive code: ").strip())
         device = devices[idx]
         if not api.send_verification_code(device):
             print("Failed to send code.")
             return
-        code = input("Enter the verification code: ").strip()
+        code = input("Verification code: ").strip()
         if not api.validate_verification_code(device, code):
             print("Verification failed.")
             return
-        print("Verification successful.")
 
-    print("=== Logged in successfully ===\n")
+    print("Logged in.\n")
 
-    # List devices from Find My iPhone
-    print("Devices available in Find My iPhone:")
-    devices = api.devices
-    for i, device in enumerate(devices):
-        status = device.status()
-        name = status.get("name", f"Unknown Device {i}")
-        model = status.get("deviceDisplayName", "Unknown Model")
-        print(f"  [{i}] {name} ({model})")
+    # Find the target device
+    device = find_device(api)
+    if not device:
+        print(f"ERROR: Could not find device matching '{TARGET_DEVICE}'")
+        print("Available devices:")
+        for d in api.devices:
+            print(f"  - {d.status().get('name', 'Unknown')}")
+        return
 
-    # Pick a device and fetch location
-    idx = int(input("\nChoose a device to locate: ").strip())
-    device = devices[idx]
+    status = device.status()
+    print(f"Tracking: {status.get('name')} ({status.get('deviceDisplayName')})")
+    print(f"Polling every {POLL_INTERVAL}s. Ctrl+C to stop.\n")
 
-    print(f"\n=== Device status (full dump) ===")
-    print(json.dumps(device.status(), indent=2, default=str))
-
-    print(f"\n=== Location (full dump) ===")
-    location = device.location
-    print(json.dumps(location, indent=2, default=str) if location else "No location available.")
+    # Continuous location polling
+    try:
+        while True:
+            location = device.location
+            now = datetime.now().strftime("%H:%M:%S")
+            if location:
+                ts = datetime.fromtimestamp(location["timeStamp"] / 1000).strftime("%H:%M:%S")
+                print(
+                    f"[{now}] "
+                    f"lat={location['latitude']:.6f}  "
+                    f"lng={location['longitude']:.6f}  "
+                    f"acc={location.get('horizontalAccuracy', '?')}m  "
+                    f"type={location.get('positionType', '?')}  "
+                    f"device_ts={ts}  "
+                    f"old={location.get('isOld', '?')}"
+                )
+            else:
+                print(f"[{now}] No location available.")
+            time.sleep(POLL_INTERVAL)
+    except KeyboardInterrupt:
+        print("\nStopped.")
 
 
 if __name__ == "__main__":

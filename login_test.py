@@ -5,28 +5,62 @@ Helps identify the full authentication behavior:
   2. 2FA prompt (if enabled)
   3. Device selection
   4. Location fetch
+
+Stores the Apple ID and cookies locally so repeat runs are fully automatic.
 """
 
 import json
+import os
+from pathlib import Path
 from pyicloud import PyiCloudService
+
+COOKIE_DIR = Path(__file__).parent / ".icloud_cookies"
+SESSION_FILE = Path(__file__).parent / ".icloud_session.json"
+
+
+def load_saved_session():
+    """Load the saved Apple ID from the session file."""
+    if SESSION_FILE.exists():
+        data = json.loads(SESSION_FILE.read_text())
+        return data.get("apple_id")
+    return None
+
+
+def save_session(apple_id):
+    """Save the Apple ID to the session file."""
+    SESSION_FILE.write_text(json.dumps({"apple_id": apple_id}))
+
 
 def main():
     print("=== iCloud Login Test ===\n")
 
-    apple_id = input("Apple ID (email): ").strip()
+    saved_apple_id = load_saved_session()
+    api = None
 
-    # Try connecting with just the Apple ID — pyicloud will reuse cached cookies
-    print("\nChecking for cached session...")
-    try:
-        api = PyiCloudService(apple_id)
-        if not api.requires_2fa and not api.requires_2sa:
-            print("Valid session found — skipping login.")
+    # Try reusing cached session with saved Apple ID
+    if saved_apple_id:
+        print(f"Saved Apple ID found: {saved_apple_id}")
+        print("Checking for cached session...")
+        try:
+            api = PyiCloudService(saved_apple_id, cookie_directory=str(COOKIE_DIR))
+            if not api.requires_2fa and not api.requires_2sa:
+                print("Valid session — skipping login.\n")
+            else:
+                print("Session expired — need to re-authenticate.")
+                api = None
+        except Exception:
+            print("Cached session invalid.")
+            api = None
+
+    # No valid session — ask for credentials
+    if api is None:
+        if not saved_apple_id:
+            apple_id = input("Apple ID (email): ").strip()
         else:
-            raise Exception("Session needs re-auth")
-    except Exception:
-        print("No valid session. Requesting credentials...")
+            apple_id = saved_apple_id
         password = input("Password: ").strip()
-        api = PyiCloudService(apple_id, password)
+        api = PyiCloudService(apple_id, password, cookie_directory=str(COOKIE_DIR))
+        save_session(apple_id)
 
     # Handle 2FA
     if api.requires_2fa:
@@ -56,7 +90,7 @@ def main():
             return
         print("Verification successful.")
 
-    print("\n=== Logged in successfully ===\n")
+    print("=== Logged in successfully ===\n")
 
     # List devices from Find My iPhone
     print("Devices available in Find My iPhone:")

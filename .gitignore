@@ -6,6 +6,10 @@ node_modules/
 .env.local
 .env.*.local
 
+# iCloud session
+.icloud_cookies/
+.icloud_session.json
+
 # OS files
 .DS_Store
 Thumbs.db

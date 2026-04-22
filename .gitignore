@@ -31,3 +31,14 @@ npm-debug.log*
 
 # Coverage
 coverage/
+
+# Python
+__pycache__/
+venv/
+*.pyc
+
+# Supabase
+supabase/
+
+# Claude
+.claude/

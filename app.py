@@ -633,6 +633,128 @@ async def api_history_for_date(device_id: str, date: str):
     return {"points": points, "total_distance_m": round(total_distance, 1)}
 
 
+def find_device_by_name(name: str):
+    """Find a tracked device by partial name match (case-insensitive)."""
+    db_devices = get_all_tracked_devices_from_db()
+    name_lower = name.lower()
+    for dev in db_devices:
+        if name_lower in dev["device_name"].lower():
+            return dev
+    # Fall back to device_id match
+    for dev in db_devices:
+        if dev["device_id"] == name:
+            return dev
+    return None
+
+
+@app.get("/api/where/{name}")
+async def api_where(name: str, time: str = None):
+    """
+    Where is/was a device?
+    - No time param: returns latest live location.
+    - With time param (ISO format or HH:MM): returns closest saved point to that time today.
+    """
+    device = find_device_by_name(name)
+    if not device:
+        return JSONResponse({"error": f"No tracked device matching '{name}'."}, status_code=404)
+
+    device_id = device["device_id"]
+
+    if not time:
+        # Latest live location from worker cache
+        loc = live_locations.get(device_id)
+        if not loc:
+            return JSONResponse({"error": "No live location available."}, status_code=404)
+        return {
+            "device": device["device_name"],
+            "latitude": loc["latitude"],
+            "longitude": loc["longitude"],
+            "accuracy": loc.get("horizontalAccuracy"),
+            "polled_at": loc.get("polled_at"),
+            "source": "live",
+        }
+
+    # Parse time and find closest saved point
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        if "T" in time or "-" in time:
+            target = datetime.fromisoformat(time.replace("Z", "+00:00"))
+        else:
+            target = datetime.fromisoformat(f"{today}T{time}:00+00:00")
+    except ValueError:
+        return JSONResponse({"error": "Invalid time format. Use HH:MM or ISO format."}, status_code=400)
+
+    target_ts = target.isoformat()
+    # Get closest point before and after target time
+    before = (
+        supabase.table("location_history")
+        .select("*")
+        .eq("device_id", device_id)
+        .lte("created_at", target_ts)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    after = (
+        supabase.table("location_history")
+        .select("*")
+        .eq("device_id", device_id)
+        .gte("created_at", target_ts)
+        .order("created_at", desc=False)
+        .limit(1)
+        .execute()
+    )
+
+    candidates = (before.data or []) + (after.data or [])
+    if not candidates:
+        return JSONResponse({"error": "No location data for that time."}, status_code=404)
+
+    # Pick closest
+    best = min(candidates, key=lambda r: abs(
+        datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")).timestamp() - target.timestamp()
+    ))
+
+    return {
+        "device": device["device_name"],
+        "latitude": best["latitude"],
+        "longitude": best["longitude"],
+        "accuracy": best["accuracy"],
+        "recorded_at": best["created_at"],
+        "source": "history",
+    }
+
+
+@app.get("/api/distance/{name1}/{name2}")
+async def api_distance(name1: str, name2: str):
+    """Distance between two tracked devices (current live locations)."""
+    dev1 = find_device_by_name(name1)
+    dev2 = find_device_by_name(name2)
+
+    if not dev1:
+        return JSONResponse({"error": f"No tracked device matching '{name1}'."}, status_code=404)
+    if not dev2:
+        return JSONResponse({"error": f"No tracked device matching '{name2}'."}, status_code=404)
+
+    loc1 = live_locations.get(dev1["device_id"])
+    loc2 = live_locations.get(dev2["device_id"])
+
+    if not loc1:
+        return JSONResponse({"error": f"No live location for {dev1['device_name']}."}, status_code=404)
+    if not loc2:
+        return JSONResponse({"error": f"No live location for {dev2['device_name']}."}, status_code=404)
+
+    dist = haversine(loc1["latitude"], loc1["longitude"], loc2["latitude"], loc2["longitude"])
+
+    return {
+        "device_1": dev1["device_name"],
+        "device_2": dev2["device_name"],
+        "distance_m": round(dist, 1),
+        "distance_km": round(dist / 1000, 2),
+        "device_1_location": {"latitude": loc1["latitude"], "longitude": loc1["longitude"]},
+        "device_2_location": {"latitude": loc2["latitude"], "longitude": loc2["longitude"]},
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 

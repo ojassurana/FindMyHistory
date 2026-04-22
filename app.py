@@ -161,6 +161,7 @@ async def poll_location():
 
                 # Sync tracked_devices from DB in case new ones were added
                 db_devices = get_all_tracked_devices_from_db()
+                print(f"[poll] DB has {len(db_devices)} devices, memory has {len(tracked_devices)}")
                 for db_dev in db_devices:
                     did = db_dev["device_id"]
                     if did not in tracked_devices:
@@ -168,6 +169,8 @@ async def poll_location():
                         if icloud_dev:
                             tracked_devices[did] = icloud_dev
                             print(f"[poll] Started tracking: {db_dev['device_name']}")
+                        else:
+                            print(f"[poll] Could not find iCloud device for: {db_dev['device_name']}")
 
                 # Remove devices no longer in DB
                 db_ids = {d["device_id"] for d in db_devices}

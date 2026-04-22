@@ -200,7 +200,10 @@ async def poll_location():
                                     "latitude": location["latitude"],
                                     "longitude": location["longitude"],
                                 }
-                                print(f"[poll] Saved location for {device_id[:20]}...")
+                                print(f"[poll] Saved: {location['latitude']:.4f},{location['longitude']:.4f}")
+                            # else: not moved enough, skip silently
+                        else:
+                            print(f"[poll] No location for {device_id[:20]}")
                     except Exception as e:
                         print(f"[poll] Error polling {device_id[:20]}...: {e}")
         except Exception as e:

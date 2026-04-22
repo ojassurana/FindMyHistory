@@ -147,8 +147,11 @@ async def poll_location():
     """Background task: poll iCloud for all tracked devices every POLL_INTERVAL seconds."""
     global icloud_api, tracked_devices
 
+    print(f"[poll] Background poll task started")
     while True:
         try:
+            if not icloud_api:
+                print(f"[poll] No iCloud API, skipping")
             if icloud_api:
                 # Check if session is still valid
                 if icloud_api.requires_2fa or icloud_api.requires_2sa:

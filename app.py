@@ -30,6 +30,7 @@ supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVIC
 icloud_api = None
 tracked_devices = {}  # {device_id: icloud_device_object}
 last_saved_locations = {}  # {device_id: {latitude, longitude}}
+live_locations = {}  # {device_id: {latitude, longitude, accuracy, ...}} — updated by worker
 POLL_INTERVAL = 5
 MIN_DISTANCE_M = 20
 COOKIE_DIR = tempfile.mkdtemp(prefix="icloud_cookies_")
@@ -226,7 +227,17 @@ def background_poll_worker():
                 if not location or not location.get("latitude"):
                     continue
 
-                # Log every poll with coords
+                # Update shared live_locations cache for the web endpoint
+                live_locations[device_id] = {
+                    "latitude": location["latitude"],
+                    "longitude": location["longitude"],
+                    "horizontalAccuracy": location.get("horizontalAccuracy"),
+                    "positionType": location.get("positionType"),
+                    "timeStamp": location.get("timeStamp"),
+                    "isOld": location.get("isOld"),
+                    "altitude": location.get("altitude"),
+                }
+
                 dev_name = next((d["device_name"] for d in db_devices if d["device_id"] == device_id), device_id[:15])
                 print(f"[worker] {dev_name}: {location['latitude']:.6f},{location['longitude']:.6f}", flush=True)
 
@@ -518,38 +529,30 @@ async def api_tracked_devices():
 
 @app.get("/api/locations")
 async def api_locations():
-    if not icloud_api:
-        return JSONResponse({"error": "Not authenticated."}, status_code=401)
-
-    if icloud_api.requires_2fa or icloud_api.requires_2sa:
-        return JSONResponse({"error": "Session expired."}, status_code=401)
+    """Returns live locations from the worker's cache (updated every 5s)."""
+    if not live_locations:
+        return JSONResponse({"error": "No location data yet."}, status_code=404)
 
     db_devices = get_all_tracked_devices_from_db()
     locations = []
 
     for i, db_dev in enumerate(db_devices):
-        device = tracked_devices.get(db_dev["device_id"])
-        if not device:
+        loc = live_locations.get(db_dev["device_id"])
+        if not loc:
             continue
 
-        try:
-            location = device.location
-            if location and location.get("latitude"):
-                status = device.status()
-                locations.append({
-                    "device_id": db_dev["device_id"],
-                    "device_name": db_dev["device_name"],
-                    "color": DEVICE_COLORS[i % len(DEVICE_COLORS)],
-                    "latitude": location["latitude"],
-                    "longitude": location["longitude"],
-                    "accuracy": location.get("horizontalAccuracy"),
-                    "position_type": location.get("positionType"),
-                    "timestamp": location.get("timeStamp"),
-                    "is_old": location.get("isOld"),
-                    "battery": status.get("batteryLevel"),
-                })
-        except Exception as e:
-            print(f"[location] Error for {db_dev['device_name']}: {e}")
+        locations.append({
+            "device_id": db_dev["device_id"],
+            "device_name": db_dev["device_name"],
+            "color": DEVICE_COLORS[i % len(DEVICE_COLORS)],
+            "latitude": loc["latitude"],
+            "longitude": loc["longitude"],
+            "accuracy": loc.get("horizontalAccuracy"),
+            "position_type": loc.get("positionType"),
+            "timestamp": loc.get("timeStamp"),
+            "is_old": loc.get("isOld"),
+            "battery": None,
+        })
 
     return {"locations": locations}
 

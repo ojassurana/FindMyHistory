@@ -1,22 +1,32 @@
 """
 Simple CLI script to test the pyicloud login flow.
 Helps identify the full authentication behavior:
-  1. Apple ID + password
+  1. Apple ID + password (skipped if valid session cookie exists)
   2. 2FA prompt (if enabled)
   3. Device selection
   4. Location fetch
 """
 
+import json
 from pyicloud import PyiCloudService
 
 def main():
     print("=== iCloud Login Test ===\n")
 
     apple_id = input("Apple ID (email): ").strip()
-    password = input("Password: ").strip()
 
-    print("\nConnecting to iCloud...")
-    api = PyiCloudService(apple_id, password)
+    # Try connecting with just the Apple ID — pyicloud will reuse cached cookies
+    print("\nChecking for cached session...")
+    try:
+        api = PyiCloudService(apple_id)
+        if not api.requires_2fa and not api.requires_2sa:
+            print("Valid session found — skipping login.")
+        else:
+            raise Exception("Session needs re-auth")
+    except Exception:
+        print("No valid session. Requesting credentials...")
+        password = input("Password: ").strip()
+        api = PyiCloudService(apple_id, password)
 
     # Handle 2FA
     if api.requires_2fa:
@@ -62,7 +72,6 @@ def main():
     device = devices[idx]
 
     print(f"\n=== Device status (full dump) ===")
-    import json
     print(json.dumps(device.status(), indent=2, default=str))
 
     print(f"\n=== Location (full dump) ===")

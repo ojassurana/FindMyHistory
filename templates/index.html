@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FindMyHistory</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-card">
+            <h1>FindMyHistory</h1>
+            <p>Sign in with your Apple ID to start tracking.</p>
+            <div id="login-error" class="error-msg"></div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label>Apple ID</label>
+                    <input type="email" id="apple-id" placeholder="you@example.com" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="password" placeholder="Your Apple ID password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn">Sign In</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2FA Screen -->
+    <div id="tfa-screen" class="login-screen" style="display:none;">
+        <div class="login-card">
+            <h1>Two-Factor Authentication</h1>
+            <p>Enter the verification code sent to your trusted device.</p>
+            <div id="tfa-error" class="error-msg"></div>
+            <form id="tfa-form">
+                <div class="form-group">
+                    <label>Verification Code</label>
+                    <input type="text" id="tfa-code" placeholder="123456" required maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autocomplete="one-time-code">
+                </div>
+                <button type="submit" class="btn">Verify</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Device Selection Screen -->
+    <div id="device-screen" class="login-screen" style="display:none;">
+        <div class="login-card" style="width: 440px;">
+            <h1>Select Device</h1>
+            <p>Choose which device to track.</p>
+            <ul id="device-list" class="device-list"></ul>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app-layout" class="app-layout">
+        <!-- Mobile sidebar toggle -->
+        <button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+
+        <!-- Sidebar -->
+        <div id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2 id="tracking-device-name">—</h2>
+                <div class="subtitle" id="tracking-device-model">—</div>
+                <button class="switch-device-btn" onclick="switchDevice()">Switch Device</button>
+            </div>
+
+            <div id="date-list" class="date-list">
+                <div class="date-list-empty">Loading history...</div>
+            </div>
+
+            <!-- Playback Controls -->
+            <div id="playback-bar" class="playback-bar">
+                <div class="playback-header">
+                    <span id="playback-date" class="playback-date"></span>
+                    <span id="playback-distance" class="playback-distance"></span>
+                </div>
+                <div class="playback-controls">
+                    <button id="play-btn" class="play-btn" onclick="togglePlayback()">▶</button>
+                    <input type="range" id="scrubber" class="scrubber" min="0" max="100" value="0">
+                    <select id="speed-select" class="speed-select">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                        <option value="4">4x</option>
+                    </select>
+                </div>
+                <button class="switch-device-btn" style="margin-top: 12px; width: 100%; text-align: center;" onclick="backToLive()">Back to Live</button>
+            </div>
+        </div>
+
+        <!-- Map -->
+        <div class="map-container">
+            <div id="map"></div>
+
+            <!-- Info Panel -->
+            <div id="info-panel" class="info-panel">
+                <div class="info-item">
+                    <div class="info-label">Updated</div>
+                    <div class="info-value" id="info-updated">—</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Accuracy</div>
+                    <div class="info-value" id="info-accuracy">—</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Coordinates</div>
+                    <div class="info-value" id="info-coords">—</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Battery</div>
+                    <div class="info-value" id="info-battery">—</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

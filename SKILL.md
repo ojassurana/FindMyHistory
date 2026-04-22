@@ -8,6 +8,18 @@ FindMyHistory is a **live location tracking system** that tracks iPhones via App
 
 ---
 
+## IMPORTANT: First Thing To Do
+
+**Before handling ANY location request, the agent MUST call `/api/tracked-devices` first** to get the list of all currently tracked devices. This gives the agent context about who is being tracked, their device names, and models. Cache this for the rest of the conversation — no need to call it again unless the user adds or removes a device.
+
+```
+GET /api/tracked-devices
+```
+
+This returns the full list of tracked devices. Use the device names from this response for all subsequent API calls. This ensures the agent always knows which devices are available and can match user requests to the correct device.
+
+---
+
 ## System Architecture
 
 ```

@@ -210,7 +210,6 @@ def background_poll_worker():
                 continue
 
             # Sync tracked devices from DB
-            print(f"[worker] tick", flush=True)
             db_devices = worker_sb.table("tracked_device").select("*").execute().data
             db_ids = {d["device_id"] for d in db_devices}
             for db_dev in db_devices:
@@ -226,6 +225,10 @@ def background_poll_worker():
                 location = device.location
                 if not location or not location.get("latitude"):
                     continue
+
+                # Log every poll with coords
+                dev_name = next((d["device_name"] for d in db_devices if d["device_id"] == device_id), device_id[:15])
+                print(f"[worker] {dev_name}: {location['latitude']:.6f},{location['longitude']:.6f}", flush=True)
 
                 should_save = True
                 last = worker_last_saved.get(device_id)

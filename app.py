@@ -256,6 +256,12 @@ def background_poll_worker():
                         should_save = False
 
                 if should_save:
+                    # Update cache BEFORE DB insert to prevent duplicate saves
+                    worker_last_saved[device_id] = {
+                        "latitude": location["latitude"],
+                        "longitude": location["longitude"],
+                    }
+                    last_saved_locations[device_id] = worker_last_saved[device_id]
                     worker_sb.table("location_history").insert({
                         "device_id": device_id,
                         "latitude": location["latitude"],
@@ -265,11 +271,6 @@ def background_poll_worker():
                         "altitude": location.get("altitude"),
                         "icloud_timestamp": location.get("timeStamp"),
                     }).execute()
-                    worker_last_saved[device_id] = {
-                        "latitude": location["latitude"],
-                        "longitude": location["longitude"],
-                    }
-                    last_saved_locations[device_id] = worker_last_saved[device_id]
                     print(f"[worker] Saved: {location['latitude']:.4f},{location['longitude']:.4f}", flush=True)
 
         except Exception as e:

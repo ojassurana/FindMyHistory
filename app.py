@@ -156,6 +156,23 @@ async def poll_location():
                     tracked_devices = {}
                     continue
 
+                # Sync tracked_devices from DB in case new ones were added
+                db_devices = get_all_tracked_devices_from_db()
+                for db_dev in db_devices:
+                    did = db_dev["device_id"]
+                    if did not in tracked_devices:
+                        icloud_dev = find_icloud_device_by_id(did)
+                        if icloud_dev:
+                            tracked_devices[did] = icloud_dev
+                            print(f"[poll] Started tracking: {db_dev['device_name']}")
+
+                # Remove devices no longer in DB
+                db_ids = {d["device_id"] for d in db_devices}
+                for did in list(tracked_devices.keys()):
+                    if did not in db_ids:
+                        tracked_devices.pop(did, None)
+                        last_saved_locations.pop(did, None)
+
                 # Poll each tracked device
                 for device_id, device in list(tracked_devices.items()):
                     try:
@@ -177,6 +194,7 @@ async def poll_location():
                                     "latitude": location["latitude"],
                                     "longitude": location["longitude"],
                                 }
+                                print(f"[poll] Saved location for {device_id[:20]}...")
                     except Exception as e:
                         print(f"[poll] Error polling {device_id[:20]}...: {e}")
         except Exception as e:

@@ -59,17 +59,15 @@ def main():
 
     # Pick a device and fetch location
     idx = int(input("\nChoose a device to locate: ").strip())
-    device = list(devices.values())[idx]
-    location = device.location()
+    device = devices[idx]
 
-    if location:
-        print(f"\nLocation found:")
-        print(f"  Latitude:  {location['latitude']}")
-        print(f"  Longitude: {location['longitude']}")
-        print(f"  Accuracy:  {location.get('horizontalAccuracy', 'N/A')}m")
-        print(f"  Timestamp: {location.get('timeStamp', 'N/A')}")
-    else:
-        print("\nCould not retrieve location. Device may be offline.")
+    print(f"\n=== Device status (full dump) ===")
+    import json
+    print(json.dumps(device.status(), indent=2, default=str))
+
+    print(f"\n=== Location (full dump) ===")
+    location = device.location()
+    print(json.dumps(location, indent=2, default=str) if location else "No location available.")
 
 
 if __name__ == "__main__":

@@ -373,25 +373,43 @@ async def api_location():
 
 @app.get("/api/history/dates")
 async def api_history_dates():
-    """Get all dates that have location history."""
+    """Get all dates that have location history, with point count and distance."""
     db_device = get_tracked_device_from_db()
     if not db_device:
         return {"dates": []}
 
     result = (
         supabase.table("location_history")
-        .select("created_at")
+        .select("latitude,longitude,created_at")
         .eq("device_id", db_device["device_id"])
-        .order("created_at", desc=True)
+        .order("created_at", desc=False)
         .execute()
     )
 
-    dates = set()
+    # Group by date and compute stats
+    date_stats = {}
     for row in result.data:
         dt = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
-        dates.add(dt.strftime("%Y-%m-%d"))
+        date_key = dt.strftime("%Y-%m-%d")
+        if date_key not in date_stats:
+            date_stats[date_key] = {"points": [], "count": 0, "distance": 0}
+        entry = date_stats[date_key]
+        if entry["points"]:
+            prev = entry["points"][-1]
+            entry["distance"] += haversine(prev[0], prev[1], row["latitude"], row["longitude"])
+        entry["points"].append((row["latitude"], row["longitude"]))
+        entry["count"] += 1
 
-    return {"dates": sorted(dates, reverse=True)}
+    dates = []
+    for date_key in sorted(date_stats.keys(), reverse=True):
+        stats = date_stats[date_key]
+        dates.append({
+            "date": date_key,
+            "points": stats["count"],
+            "distance_m": round(stats["distance"], 1),
+        })
+
+    return {"dates": dates}
 
 
 @app.get("/api/history/{date}")

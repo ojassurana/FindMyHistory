@@ -293,15 +293,19 @@ async function loadHistoryDates() {
         }
 
         dateList.innerHTML = "";
-        data.dates.forEach((date) => {
+        data.dates.forEach((entry) => {
             const div = document.createElement("div");
             div.className = "date-item";
-            // Pretty format
-            const d = new Date(date + "T00:00:00");
+            const d = new Date(entry.date + "T00:00:00");
             const today = new Date();
-            const isToday = date === today.toISOString().slice(0, 10);
-            div.textContent = isToday ? `Today — ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
-            div.addEventListener("click", () => loadHistory(date, div));
+            const isToday = entry.date === today.toISOString().slice(0, 10);
+            const dateLabel = isToday ? `Today — ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+            const dist = formatDistance(entry.distance_m);
+            div.innerHTML = `
+                <div class="date-item-title">${dateLabel}</div>
+                <div class="date-item-meta">${entry.points} points &middot; ${dist}</div>
+            `;
+            div.addEventListener("click", () => loadHistory(entry.date, div));
             dateList.appendChild(div);
         });
     } catch {

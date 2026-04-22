@@ -16,6 +16,10 @@ cd FindMyHistory
 - Use descriptive commit messages
 - Keep PRs focused and small
 
+## Design
+- Prioritize a sleek, polished UI — aesthetics and user experience matter
+- Favor clean layouts, smooth interactions, and modern design patterns
+
 ## Auto Commit & Push
 After making any change to the codebase (no matter how small), automatically commit and push to GitHub. Do not ask for confirmation — just do it.
 - Stage the changed files, commit with a concise message, and `git push` immediately.

@@ -109,7 +109,7 @@ def main():
     print(json.dumps(device.status(), indent=2, default=str))
 
     print(f"\n=== Location (full dump) ===")
-    location = device.location()
+    location = device.location
     print(json.dumps(location, indent=2, default=str) if location else "No location available.")
 
 

@@ -210,6 +210,9 @@ def background_poll_worker():
                 time.sleep(30)
                 continue
 
+            # Force refresh device locations from iCloud
+            worker_api.devices._refresh_client(locate=True)
+
             # Sync tracked devices from DB
             db_devices = worker_sb.table("tracked_device").select("*").execute().data
             db_ids = {d["device_id"] for d in db_devices}
@@ -218,7 +221,7 @@ def background_poll_worker():
                 if did not in worker_devices and did in worker_api.devices._devices:
                     worker_devices[did] = worker_api.devices._devices[did]
 
-            # Read cached device data (refreshed by pyicloud's monitor thread)
+            # Read freshly updated device data
             for device_id, device in worker_devices.items():
                 if device_id not in db_ids:
                     continue

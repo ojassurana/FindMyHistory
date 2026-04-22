@@ -180,8 +180,10 @@ async def poll_location():
                         last_saved_locations.pop(did, None)
 
                 # Iterate all iCloud devices and match against tracked ones
+                # Must run in thread because __iter__ calls blocking iCloud API
                 db_ids = {d["device_id"] for d in db_devices}
-                for device in icloud_api.devices:
+                devices_list = await asyncio.to_thread(list, icloud_api.devices)
+                for device in devices_list:
                     device_id = device.data.get("id", "")
                     if device_id not in db_ids:
                         continue

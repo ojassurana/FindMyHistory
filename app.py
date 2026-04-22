@@ -182,9 +182,16 @@ async def poll_location():
                 # Refresh all device data from iCloud (blocking call, run in thread)
                 try:
                     await asyncio.to_thread(icloud_api.devices.refresh)
-                    print(f"[poll] Refreshed iCloud data")
                 except Exception as e:
                     print(f"[poll] Refresh failed: {e}")
+                    await asyncio.sleep(POLL_INTERVAL)
+                    continue
+
+                # Re-resolve device references after refresh (refresh creates new objects)
+                for did in list(tracked_devices.keys()):
+                    fresh = find_icloud_device_by_id(did)
+                    if fresh:
+                        tracked_devices[did] = fresh
 
                 # Poll each tracked device
                 for device_id, device in list(tracked_devices.items()):

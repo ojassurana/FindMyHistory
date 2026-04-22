@@ -131,37 +131,91 @@ def save_location(device_id, location):
 
 def background_poll_worker():
     """
-    Runs in a daemon thread. Uses its own Supabase client.
-    Polls iCloud every POLL_INTERVAL seconds and saves to DB.
+    Runs in a daemon thread with its OWN iCloud + Supabase connections.
+    Completely independent from the web process — no shared objects.
     """
-    # Own Supabase client for this thread
     worker_sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    worker_api = None
+    worker_last_saved = {}
 
     print("[worker] Background poll worker started", flush=True)
 
     while True:
         try:
-            if not icloud_api or not tracked_devices:
+            # Connect to iCloud if not connected
+            if worker_api is None:
+                session = (
+                    worker_sb.table("icloud_session")
+                    .select("apple_id, cookie_data")
+                    .eq("is_active", True)
+                    .order("updated_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if not session.data:
+                    time.sleep(POLL_INTERVAL)
+                    continue
+
+                apple_id = session.data[0]["apple_id"]
+                cookie_data = session.data[0].get("cookie_data")
+
+                # Write cookies to a separate temp dir for this worker
+                worker_cookie_dir = tempfile.mkdtemp(prefix="icloud_worker_")
+                if cookie_data:
+                    for filename, content in cookie_data.items():
+                        filepath = Path(worker_cookie_dir) / filename
+                        filepath.write_text(content if isinstance(content, str) else json.dumps(content))
+
+                api = PyiCloudService(apple_id, cookie_directory=worker_cookie_dir)
+                if api.requires_2fa or api.requires_2sa:
+                    print("[worker] Session expired, waiting for re-auth", flush=True)
+                    time.sleep(30)
+                    continue
+
+                worker_api = api
+                print(f"[worker] Connected to iCloud as {apple_id}", flush=True)
+
+                # Load last saved locations
+                db_devices = worker_sb.table("tracked_device").select("device_id").execute().data
+                for d in db_devices:
+                    last_loc = (
+                        worker_sb.table("location_history")
+                        .select("latitude,longitude")
+                        .eq("device_id", d["device_id"])
+                        .order("created_at", desc=True)
+                        .limit(1)
+                        .execute()
+                    )
+                    if last_loc.data:
+                        worker_last_saved[d["device_id"]] = last_loc.data[0]
+
+            # Check session validity
+            if worker_api.requires_2fa or worker_api.requires_2sa:
+                print("[worker] Session expired", flush=True)
+                worker_api = None
+                time.sleep(30)
+                continue
+
+            # Get tracked devices from DB
+            db_devices = worker_sb.table("tracked_device").select("*").execute().data
+            if not db_devices:
                 time.sleep(POLL_INTERVAL)
                 continue
 
-            if icloud_api.requires_2fa or icloud_api.requires_2sa:
-                print("[worker] Session expired, waiting for re-auth", flush=True)
-                time.sleep(POLL_INTERVAL)
-                continue
+            db_ids = {d["device_id"] for d in db_devices}
 
-            # Refresh device data from iCloud
-            icloud_api.devices.refresh()
+            # Iterate devices (triggers iCloud refresh — blocking is fine in this thread)
+            for device in worker_api.devices:
+                device_id = device.data.get("id", "")
+                if device_id not in db_ids:
+                    continue
 
-            # Read from tracked_devices (shared with web process)
-            for device_id, device in list(tracked_devices.items()):
                 location = device.location
                 if not location or not location.get("latitude"):
                     continue
 
-                # 20m threshold check
                 should_save = True
-                last = last_saved_locations.get(device_id)
+                last = worker_last_saved.get(device_id)
                 if last:
                     dist = haversine(
                         last["latitude"], last["longitude"],
@@ -180,14 +234,17 @@ def background_poll_worker():
                         "altitude": location.get("altitude"),
                         "icloud_timestamp": location.get("timeStamp"),
                     }).execute()
-                    last_saved_locations[device_id] = {
+                    worker_last_saved[device_id] = {
                         "latitude": location["latitude"],
                         "longitude": location["longitude"],
                     }
+                    # Also update the shared dict so /api/locations doesn't duplicate
+                    last_saved_locations[device_id] = worker_last_saved[device_id]
                     print(f"[worker] Saved: {location['latitude']:.4f},{location['longitude']:.4f}", flush=True)
 
         except Exception as e:
             print(f"[worker] Error: {e}", flush=True)
+            worker_api = None  # Force reconnect on next cycle
 
         time.sleep(POLL_INTERVAL)
 

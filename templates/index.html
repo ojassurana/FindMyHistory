@@ -59,7 +59,10 @@
         <div id="sidebar" class="sidebar">
             <div class="sidebar-header">
                 <h2>Tracked Devices</h2>
-                <button class="add-device-btn" onclick="openAddDevice()">+ Add Device</button>
+                <div style="display:flex;gap:6px;">
+                    <button class="add-device-btn" onclick="openAddDevice()">+ Add</button>
+                    <button class="add-device-btn logout-btn" onclick="logout()">Logout</button>
+                </div>
             </div>
 
             <div id="tracked-devices-list" class="tracked-devices-list">

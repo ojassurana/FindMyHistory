@@ -445,6 +445,27 @@ async def api_verify_2fa(request: Request):
         return JSONResponse({"error": "Invalid 2FA code."}, status_code=401)
 
 
+@app.post("/api/logout")
+async def api_logout():
+    """Log out: delete iCloud session cookies, stop polling."""
+    global icloud_api, tracked_devices, live_locations
+    # Clear in-memory state
+    icloud_api = None
+    tracked_devices = {}
+    live_locations = {}
+    # Delete session from DB (cookies + active flag)
+    supabase.table("icloud_session").update(
+        {"is_active": False, "cookie_data": None}
+    ).eq("is_active", True).execute()
+    # Clear cookie files
+    cookie_path = Path(COOKIE_DIR)
+    for f in cookie_path.iterdir():
+        if f.is_file():
+            f.unlink()
+    print("[logout] Session cleared, polling stopped", flush=True)
+    return {"status": "logged_out"}
+
+
 @app.get("/api/devices")
 async def api_devices():
     if not icloud_api:

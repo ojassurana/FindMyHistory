@@ -184,6 +184,15 @@ body {
     background: rgba(59, 130, 246, 0.1);
 }
 
+.logout-btn {
+    color: var(--danger);
+}
+
+.logout-btn:hover {
+    border-color: var(--danger);
+    background: rgba(239, 68, 68, 0.1);
+}
+
 /* --- Tracked Devices List --- */
 .tracked-devices-list {
     padding: 12px;

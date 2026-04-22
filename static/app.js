@@ -574,6 +574,23 @@ function backToLive() {
     startPolling();
 }
 
+async function logout() {
+    if (!confirm("Log out? This will stop all tracking until someone logs in again.")) return;
+    stopPolling();
+    stopPlayback();
+    try {
+        await fetch("/api/logout", { method: "POST" });
+    } catch {}
+    // Clear map
+    Object.values(markers).forEach(m => map.removeLayer(m));
+    Object.values(accuracyCircles).forEach(c => map.removeLayer(c));
+    markers = {};
+    accuracyCircles = {};
+    document.getElementById("info-panel").classList.remove("active");
+    hideAll();
+    showLogin();
+}
+
 function toggleSidebar() {
     document.getElementById("sidebar").classList.toggle("open");
 }

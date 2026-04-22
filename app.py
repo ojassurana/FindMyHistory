@@ -132,10 +132,13 @@ def save_location(device_id, location):
 def background_poll_worker():
     """
     Runs in a daemon thread with its OWN iCloud + Supabase connections.
-    Completely independent from the web process — no shared objects.
+    Creates a PyiCloudService with refresh_interval=5s so pyicloud's own
+    monitor thread keeps device data fresh. This thread just reads the
+    cached data and saves to Supabase.
     """
     worker_sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
     worker_api = None
+    worker_devices = {}  # {device_id: AppleDevice}
     worker_last_saved = {}
 
     print("[worker] Background poll worker started", flush=True)
@@ -159,14 +162,15 @@ def background_poll_worker():
                 apple_id = session.data[0]["apple_id"]
                 cookie_data = session.data[0].get("cookie_data")
 
-                # Write cookies to a separate temp dir for this worker
                 worker_cookie_dir = tempfile.mkdtemp(prefix="icloud_worker_")
                 if cookie_data:
                     for filename, content in cookie_data.items():
                         filepath = Path(worker_cookie_dir) / filename
                         filepath.write_text(content if isinstance(content, str) else json.dumps(content))
 
-                api = PyiCloudService(apple_id, cookie_directory=worker_cookie_dir)
+                # refresh_interval=5 means pyicloud's own monitor thread
+                # refreshes device data every 5 seconds automatically
+                api = PyiCloudService(apple_id, cookie_directory=worker_cookie_dir, refresh_interval=POLL_INTERVAL)
                 if api.requires_2fa or api.requires_2sa:
                     print("[worker] Session expired, waiting for re-auth", flush=True)
                     time.sleep(30)
@@ -175,8 +179,16 @@ def background_poll_worker():
                 worker_api = api
                 print(f"[worker] Connected to iCloud as {apple_id}", flush=True)
 
+                # Cache device references (the init already fetched them)
+                db_devices = worker_sb.table("tracked_device").select("*").execute().data
+                for db_dev in db_devices:
+                    for dev_id, dev in worker_api.devices._devices.items():
+                        if dev_id == db_dev["device_id"]:
+                            worker_devices[dev_id] = dev
+                            break
+                print(f"[worker] Tracking {len(worker_devices)} devices", flush=True)
+
                 # Load last saved locations
-                db_devices = worker_sb.table("tracked_device").select("device_id").execute().data
                 for d in db_devices:
                     last_loc = (
                         worker_sb.table("location_history")
@@ -193,20 +205,20 @@ def background_poll_worker():
             if worker_api.requires_2fa or worker_api.requires_2sa:
                 print("[worker] Session expired", flush=True)
                 worker_api = None
+                worker_devices = {}
                 time.sleep(30)
                 continue
 
-            # Get tracked devices from DB
+            # Sync tracked devices from DB
             db_devices = worker_sb.table("tracked_device").select("*").execute().data
-            if not db_devices:
-                time.sleep(POLL_INTERVAL)
-                continue
-
             db_ids = {d["device_id"] for d in db_devices}
+            for db_dev in db_devices:
+                did = db_dev["device_id"]
+                if did not in worker_devices and did in worker_api.devices._devices:
+                    worker_devices[did] = worker_api.devices._devices[did]
 
-            # Iterate devices (triggers iCloud refresh — blocking is fine in this thread)
-            for device in worker_api.devices:
-                device_id = device.data.get("id", "")
+            # Read cached device data (refreshed by pyicloud's monitor thread)
+            for device_id, device in worker_devices.items():
                 if device_id not in db_ids:
                     continue
 
@@ -238,13 +250,13 @@ def background_poll_worker():
                         "latitude": location["latitude"],
                         "longitude": location["longitude"],
                     }
-                    # Also update the shared dict so /api/locations doesn't duplicate
                     last_saved_locations[device_id] = worker_last_saved[device_id]
                     print(f"[worker] Saved: {location['latitude']:.4f},{location['longitude']:.4f}", flush=True)
 
         except Exception as e:
             print(f"[worker] Error: {e}", flush=True)
-            worker_api = None  # Force reconnect on next cycle
+            worker_api = None
+            worker_devices = {}
 
         time.sleep(POLL_INTERVAL)
 

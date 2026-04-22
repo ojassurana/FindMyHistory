@@ -50,3 +50,7 @@ Great for stress-testing ideas and making sure your thinking holds up before you
 ### `/frontend-design`
 A Claude Code skill for creating distinctive, production-grade frontend interfaces with high design quality.
 Used to build the polished web UI for FindMyHistory, avoiding generic AI aesthetics in favor of clean, modern design.
+
+### `/mobile-app-design`
+Reviews and guides UI design for mobile-friendly interfaces, ensuring adherence to iOS/Android design patterns and best practices.
+Used to keep the FindMyHistory web app fully responsive and optimized for mobile browsers.

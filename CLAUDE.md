@@ -24,6 +24,7 @@ cd FindMyHistory
 ## Design
 - Prioritize a sleek, polished UI — aesthetics and user experience matter
 - Favor clean layouts, smooth interactions, and modern design patterns
+- The website must be fully mobile-friendly and responsive — use `/mobile-app-design` guidance for mobile UI decisions
 
 ## Auto Commit & Push
 After making any change to the codebase (no matter how small), automatically commit and push to GitHub. Do not ask for confirmation — just do it.

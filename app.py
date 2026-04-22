@@ -256,6 +256,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import RedirectResponse
+
+
+class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
+    """Redirect HTTP to HTTPS on Heroku (checks X-Forwarded-Proto header)."""
+    async def dispatch(self, request: Request, call_next):
+        if request.headers.get("x-forwarded-proto") == "http":
+            url = request.url.replace(scheme="https")
+            return RedirectResponse(url=str(url), status_code=301)
+        return await call_next(request)
+
+
+app.add_middleware(HTTPSRedirectMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 

@@ -74,9 +74,9 @@ def restore_cookies_from_db(apple_id):
     return False
 
 
-def save_cookies_to_db(apple_id):
+def save_cookies_to_db(apple_id, cookie_dir=None):
+    cookie_path = Path(cookie_dir or COOKIE_DIR)
     cookie_data = {}
-    cookie_path = Path(COOKIE_DIR)
     for f in cookie_path.iterdir():
         if f.is_file():
             cookie_data[f.name] = f.read_text()
@@ -148,6 +148,10 @@ def background_poll_worker():
     worker_api = None
     worker_devices = {}  # {device_id: AppleDevice}
     worker_last_saved = {}
+    worker_cookie_dir = None
+    worker_apple_id = None
+    last_cookie_save = 0
+    COOKIE_SAVE_INTERVAL = 600  # Save cookies to DB every 10 minutes
 
     print("[worker] Background poll worker started", flush=True)
 
@@ -167,7 +171,7 @@ def background_poll_worker():
                     time.sleep(POLL_INTERVAL)
                     continue
 
-                apple_id = session.data[0]["apple_id"]
+                worker_apple_id = session.data[0]["apple_id"]
                 cookie_data = session.data[0].get("cookie_data")
 
                 worker_cookie_dir = tempfile.mkdtemp(prefix="icloud_worker_")
@@ -178,14 +182,15 @@ def background_poll_worker():
 
                 # refresh_interval=5 means pyicloud's own monitor thread
                 # refreshes device data every 5 seconds automatically
-                api = PyiCloudService(apple_id, cookie_directory=worker_cookie_dir, refresh_interval=POLL_INTERVAL)
+                api = PyiCloudService(worker_apple_id, cookie_directory=worker_cookie_dir, refresh_interval=POLL_INTERVAL)
                 if api.requires_2fa or api.requires_2sa:
                     print("[worker] Session expired, waiting for re-auth", flush=True)
                     time.sleep(30)
                     continue
 
                 worker_api = api
-                print(f"[worker] Connected to iCloud as {apple_id}", flush=True)
+                last_cookie_save = time.time()
+                print(f"[worker] Connected to iCloud as {worker_apple_id}", flush=True)
 
                 # Cache device references (the init already fetched them)
                 db_devices = worker_sb.table("tracked_device").select("*").execute().data
@@ -279,6 +284,15 @@ def background_poll_worker():
                         "icloud_timestamp": location.get("timeStamp"),
                     }).execute()
                     print(f"[worker] Saved: {location['latitude']:.4f},{location['longitude']:.4f}", flush=True)
+
+            # Periodically save worker's cookies back to DB to keep them fresh
+            if worker_cookie_dir and worker_apple_id and time.time() - last_cookie_save > COOKIE_SAVE_INTERVAL:
+                try:
+                    save_cookies_to_db(worker_apple_id, cookie_dir=worker_cookie_dir)
+                    last_cookie_save = time.time()
+                    print("[worker] Cookies saved to DB", flush=True)
+                except Exception as ce:
+                    print(f"[worker] Cookie save failed: {ce}", flush=True)
 
         except Exception as e:
             print(f"[worker] Error: {e}", flush=True)

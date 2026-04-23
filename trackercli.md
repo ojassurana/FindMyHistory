@@ -82,8 +82,8 @@ GET /api/where/{device_name}?time={time}
 **Parameters:**
 - `device_name` (path) — Partial, case-insensitive name match. e.g., `ojas` matches "Ojas's 17 Pro Max", `divi` matches "Divijaa's iPhone"
 - `time` (query, optional) — If omitted, returns **live location**. If provided, returns the **closest saved historical point** to that time.
-  - Accepts `HH:MM` format (assumes today, UTC) e.g., `13:45`
-  - Accepts full ISO format e.g., `2026-04-22T13:45:00+00:00`
+  - Accepts `HH:MM` format (assumes today, Singapore time UTC+8) e.g., `13:45`
+  - Accepts full ISO format e.g., `2026-04-22T13:45:00+08:00`
 
 **Response (live — no time param):**
 ```json
@@ -104,7 +104,7 @@ GET /api/where/{device_name}?time={time}
   "latitude": 1.321768,
   "longitude": 103.770988,
   "accuracy": 2.31,
-  "recorded_at": "2026-04-22T13:45:02.375430+00:00",
+  "recorded_at": "2026-04-22T21:45:02.375430+08:00",
   "source": "history"
 }
 ```
@@ -129,7 +129,7 @@ GET /api/where/{device_name}?time={time}
   "latitude": 1.274975,
   "longitude": 103.845750,
   "accuracy": 12.61,
-  "recorded_at": "2026-04-22T12:08:36.204083+00:00",
+  "recorded_at": "2026-04-22T20:08:36.204083+08:00",
   "source": "history",
   "note": "No exact data for the requested time. Closest record is 548 minutes away."
 }
@@ -278,7 +278,7 @@ GET /api/history/{device_id}/{date}
       "accuracy": 12.61,
       "position_type": "Cell",
       "timestamp": 1776854916204,
-      "created_at": "2026-04-22T12:08:36.204083+00:00"
+      "created_at": "2026-04-22T20:08:36.204083+08:00"
     }
   ],
   "total_distance_m": 22879.0

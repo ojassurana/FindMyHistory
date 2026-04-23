@@ -12,6 +12,11 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 
 SGT = timezone(timedelta(hours=8))  # Asia/Singapore
+
+
+def to_sgt(iso_str: str) -> str:
+    """Convert a UTC ISO timestamp string to Singapore time ISO string."""
+    return datetime.fromisoformat(iso_str.replace("Z", "+00:00")).astimezone(SGT).isoformat()
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -646,7 +651,7 @@ async def api_history_for_date(device_id: str, date: str):
             "accuracy": row["accuracy"],
             "position_type": row["position_type"],
             "timestamp": row["icloud_timestamp"],
-            "created_at": row["created_at"],
+            "created_at": to_sgt(row["created_at"]),
         }
         if prev:
             total_distance += haversine(prev["latitude"], prev["longitude"], point["latitude"], point["longitude"])
@@ -770,7 +775,7 @@ async def api_where(name: str, time: str = None):
         "latitude": best["latitude"],
         "longitude": best["longitude"],
         "accuracy": best["accuracy"],
-        "recorded_at": best["created_at"],
+        "recorded_at": to_sgt(best["created_at"]),
         "source": "history",
     }
     if note:

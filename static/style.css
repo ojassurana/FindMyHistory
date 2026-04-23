@@ -380,6 +380,12 @@ body {
     font-weight: 600;
 }
 
+.playback-time {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+}
+
 .playback-distance {
     font-size: 12px;
     color: var(--text-muted);

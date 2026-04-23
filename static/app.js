@@ -475,6 +475,15 @@ function showPlaybackPoint(index) {
     const point = playbackPoints[index];
     const latlng = [point.latitude, point.longitude];
 
+    // Display point time in SGT
+    const timeEl = document.getElementById("playback-time");
+    if (point.created_at) {
+        const t = new Date(point.created_at);
+        timeEl.textContent = t.toLocaleTimeString("en-SG", { timeZone: "Asia/Singapore", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }) + " SGT";
+    } else {
+        timeEl.textContent = "";
+    }
+
     // Use a temporary playback marker
     if (!window._playbackMarker) {
         window._playbackMarker = L.circleMarker(latlng, {

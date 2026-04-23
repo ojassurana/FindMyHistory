@@ -9,7 +9,9 @@ import tempfile
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+SGT = timezone(timedelta(hours=8))  # Asia/Singapore
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -596,7 +598,7 @@ async def api_history_dates(device_id: str):
 
     date_stats = {}
     for row in result.data:
-        dt = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")).astimezone(SGT)
         date_key = dt.strftime("%Y-%m-%d")
         if date_key not in date_stats:
             date_stats[date_key] = {"points": [], "count": 0, "distance": 0}
@@ -621,8 +623,8 @@ async def api_history_dates(device_id: str):
 
 @app.get("/api/history/{device_id:path}/{date}")
 async def api_history_for_date(device_id: str, date: str):
-    start = f"{date}T00:00:00+00:00"
-    end = f"{date}T23:59:59+00:00"
+    start = f"{date}T00:00:00+08:00"
+    end = f"{date}T23:59:59+08:00"
 
     result = (
         supabase.table("location_history")
@@ -704,12 +706,12 @@ async def api_where(name: str, time: str = None):
         }
 
     # Parse time and find closest saved point
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(SGT).strftime("%Y-%m-%d")
     try:
         if "T" in time or "-" in time:
             target = datetime.fromisoformat(time.replace("Z", "+00:00"))
         else:
-            target = datetime.fromisoformat(f"{today}T{time}:00+00:00")
+            target = datetime.fromisoformat(f"{today}T{time}:00+08:00")
     except ValueError:
         return JSONResponse({"error": "Invalid time format. Use HH:MM or ISO format."}, status_code=400)
 

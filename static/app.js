@@ -381,7 +381,7 @@ function updateInfoPanel(loc) {
     panel.classList.add("active");
 
     document.getElementById("info-device-name").textContent = loc.device_name;
-    const ts = loc.polled_at ? new Date(loc.polled_at).toLocaleTimeString() : "—";
+    const ts = loc.polled_at ? new Date(loc.polled_at).toLocaleTimeString("en-SG", { timeZone: "Asia/Singapore" }) : "—";
     document.getElementById("info-updated").textContent = ts;
     document.getElementById("info-accuracy").textContent = loc.accuracy ? `${loc.accuracy.toFixed(1)}m` : "—";
     document.getElementById("info-coords").textContent = `${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`;
@@ -415,10 +415,10 @@ async function loadHistoryDates(deviceId) {
         data.dates.forEach((entry) => {
             const div = document.createElement("div");
             div.className = "date-item";
-            const d = new Date(entry.date + "T00:00:00");
-            const today = new Date();
-            const isToday = entry.date === today.toISOString().slice(0, 10);
-            const dateLabel = isToday ? `Today — ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+            const d = new Date(entry.date + "T00:00:00+08:00");
+            const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+            const isToday = entry.date === today;
+            const dateLabel = isToday ? `Today — ${d.toLocaleDateString("en-US", { timeZone: "Asia/Singapore", month: "short", day: "numeric" })}` : d.toLocaleDateString("en-US", { timeZone: "Asia/Singapore", weekday: "short", month: "short", day: "numeric", year: "numeric" });
             const dist = formatDistance(entry.distance_m);
             div.innerHTML = `
                 <div class="date-item-title">${dateLabel}</div>

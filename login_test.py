@@ -7,7 +7,9 @@ Stores the Apple ID and cookies locally so repeat runs are fully automatic.
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+SGT = timezone(timedelta(hours=8))
 from pathlib import Path
 from pyicloud import PyiCloudService
 
@@ -109,9 +111,9 @@ def main():
     try:
         while True:
             location = device.location
-            now = datetime.now().strftime("%H:%M:%S")
+            now = datetime.now(SGT).strftime("%H:%M:%S")
             if location:
-                ts = datetime.fromtimestamp(location["timeStamp"] / 1000).strftime("%H:%M:%S")
+                ts = datetime.fromtimestamp(location["timeStamp"] / 1000, tz=SGT).strftime("%H:%M:%S")
                 print(
                     f"[{now}] "
                     f"lat={location['latitude']:.6f}  "
